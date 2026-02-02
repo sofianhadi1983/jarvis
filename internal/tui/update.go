@@ -184,6 +184,15 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	if lowercaseInput == "/logout" || lowercaseInput == "logout" {
+		m.chat.ClearMessages()
+		if m.history != nil {
+			m.history.Clear()
+		}
+		m.agent.ClearHistory()
+		return m, tea.Quit
+	}
+
 	// Handle clear command - clears history and context
 	if lowercaseInput == "/clear" || lowercaseInput == "clear" {
 		m.input.Reset()
