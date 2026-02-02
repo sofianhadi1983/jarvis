@@ -1,4 +1,4 @@
-# {{agent_name}} Agent System
+# {{agent_name}} - At Your Service
 
 {{ include "agent.system.role.md" }}
 

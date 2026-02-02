@@ -3,12 +3,12 @@ anthropic:
   max_tokens: 8192
 
 app:
-  name: "Chewbacca"
+  name: "Jarvis"
   prompt:
     file: "agent.system.main.md"
     variables:
-      agent_name: "Chewbacca"
-      role: "an expert AI coding assistant and terminal companion"
+      agent_name: "Jarvis"
+      role: "a sophisticated AI coding assistant, much like the trusted companion to Mr. Stark"
 
 ui:
   theme: "dark"

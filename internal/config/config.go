@@ -51,7 +51,7 @@ func LoadConfig() (*Config, error) {
 		cfg.Anthropic.MaxTokens = 8192
 	}
 	if cfg.App.Name == "" {
-		cfg.App.Name = "Chewbacca"
+		cfg.App.Name = "Jarvis"
 	}
 	if cfg.UI.Theme == "" {
 		cfg.UI.Theme = "dark"

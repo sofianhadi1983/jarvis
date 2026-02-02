@@ -111,7 +111,7 @@ func fetchURL(input FetchInput) *FetchResult {
 		return result
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ChewbaccaBot/1.0)")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; JarvisBot/1.0)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
 

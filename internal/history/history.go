@@ -39,7 +39,7 @@ func NewManager() (*Manager, error) {
 		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	historyDir := filepath.Join(homeDir, ".chewbacca", "history")
+	historyDir := filepath.Join(homeDir, ".jarvis", "history")
 	if err := os.MkdirAll(historyDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create history directory: %w", err)
 	}
