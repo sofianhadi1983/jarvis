@@ -3,8 +3,8 @@ package components
 import (
 	"fmt"
 
-	"chewbacca/internal/styles"
-	"chewbacca/internal/util"
+	"jarvis/internal/styles"
+	"jarvis/internal/util"
 
 	"github.com/charmbracelet/lipgloss"
 )

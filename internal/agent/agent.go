@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"chewbacca/internal/config"
-	"chewbacca/internal/registry"
-	"chewbacca/internal/types"
+	"jarvis/internal/config"
+	"jarvis/internal/registry"
+	"jarvis/internal/types"
 
 	"github.com/sofianhadi1983/anthropic-sdk-go"
 )
@@ -73,7 +73,6 @@ func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg
 
 			resultText := extractToolResult(result)
 
-			// Check if this is an Update tool and extract diff info
 			var diffInfo *types.DiffInfo
 			if tb.name == "Update" {
 				diffInfo = extractDiffInfo(resultText)
@@ -215,7 +214,6 @@ func (a *Agent) ClearHistory() {
 	a.conversation = []anthropic.MessageParam{}
 }
 
-// extractDiffInfo parses Update tool result to get diff information
 func extractDiffInfo(result string) *types.DiffInfo {
 	var updateResult struct {
 		Success      bool   `json:"success"`

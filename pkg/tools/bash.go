@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"chewbacca/internal/util"
+	"jarvis/internal/util"
 )
 
 type BashInput struct {

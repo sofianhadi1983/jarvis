@@ -3,7 +3,7 @@ package components
 import (
 	"fmt"
 
-	"chewbacca/internal/styles"
+	"jarvis/internal/styles"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -70,7 +70,6 @@ func (s *StatusBar) View() string {
 	escHintStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("244"))
 
-	// Left side: help text or status
 	var leftContent string
 	if s.loading && s.status != "" {
 		spinnerView := s.spinner.View()
@@ -80,7 +79,6 @@ func (s *StatusBar) View() string {
 	}
 	left := helpStyle.Render(leftContent)
 
-	// Right side: app name and model (and interrupt hint when loading)
 	var rightContent string
 	if s.loading {
 		escHint := escHintStyle.Render("Esc to interrupt")
@@ -90,7 +88,6 @@ func (s *StatusBar) View() string {
 	}
 	right := rightStyle.Render(rightContent)
 
-	// Calculate gap between left and right
 	gap := s.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1

@@ -1,6 +1,6 @@
 package tui
 
-import "chewbacca/internal/types"
+import "jarvis/internal/types"
 
 type ResponseMsg = types.ResponseMsg
 type StreamChunkMsg = types.StreamChunkMsg

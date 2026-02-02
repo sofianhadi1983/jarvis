@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"chewbacca/internal/tui/components"
+	"jarvis/internal/tui/components"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

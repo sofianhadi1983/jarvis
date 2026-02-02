@@ -5,24 +5,23 @@ import (
 	"os"
 	"path/filepath"
 
-	"chewbacca/internal/styles"
+	"jarvis/internal/styles"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 type Header struct {
-	appName  string
-	version  string
-	model    string
-	workDir  string
-	width    int
+	appName string
+	version string
+	model   string
+	workDir string
+	width   int
 }
 
 func NewHeader(appName, version, model string) *Header {
 	workDir, _ := os.Getwd()
 	homeDir, _ := os.UserHomeDir()
 
-	// Convert to relative path with ~ for home directory
 	if homeDir != "" {
 		if rel, err := filepath.Rel(homeDir, workDir); err == nil && len(rel) < len(workDir) {
 			workDir = "~/" + rel

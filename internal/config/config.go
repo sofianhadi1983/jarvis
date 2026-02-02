@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"chewbacca/internal/prompt"
+	"jarvis/internal/prompt"
 
 	"gopkg.in/yaml.v3"
 )

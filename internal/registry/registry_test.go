@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"chewbacca/pkg/tools"
+	"jarvis/pkg/tools"
 )
 
 func TestRegister(t *testing.T) {

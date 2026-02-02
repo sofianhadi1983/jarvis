@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"chewbacca/internal/agent"
-	"chewbacca/internal/config"
-	"chewbacca/internal/registry"
-	"chewbacca/internal/tui"
-	"chewbacca/pkg/tools"
+	"jarvis/internal/agent"
+	"jarvis/internal/config"
+	"jarvis/internal/registry"
+	"jarvis/internal/tui"
+	"jarvis/pkg/tools"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/joho/godotenv"

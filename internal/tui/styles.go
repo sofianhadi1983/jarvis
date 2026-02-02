@@ -1,6 +1,6 @@
 package tui
 
-import "chewbacca/internal/styles"
+import "jarvis/internal/styles"
 
 var (
 	UserColor      = styles.UserColor

@@ -3,7 +3,7 @@ package registry
 import (
 	"fmt"
 
-	"chewbacca/pkg/tools"
+	"jarvis/pkg/tools"
 
 	"github.com/sofianhadi1983/anthropic-sdk-go"
 )

@@ -1,7 +1,7 @@
 package components
 
 import (
-	"chewbacca/internal/styles"
+	"jarvis/internal/styles"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,7 +24,6 @@ func NewInputArea(placeholder string) *InputArea {
 	ta.SetHeight(1)
 	ta.Focus()
 
-	// Remove all styling from textarea
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.BlurredStyle.Base = lipgloss.NewStyle()
@@ -67,10 +66,8 @@ func (i *InputArea) View() string {
 	prompt := promptStyle.Render("> ")
 	content := i.textarea.View()
 
-	// Create the input line with prompt
 	inputLine := lipgloss.JoinHorizontal(lipgloss.Left, prompt, content)
 
-	// Add some padding
 	return lipgloss.NewStyle().
 		PaddingLeft(0).
 		PaddingTop(1).

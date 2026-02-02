@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"chewbacca/internal/util"
+	"jarvis/internal/util"
 
 	"golang.org/x/net/html"
 )

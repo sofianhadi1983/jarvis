@@ -4,9 +4,9 @@ import (
 	"context"
 	"sync"
 
-	"chewbacca/internal/config"
-	"chewbacca/internal/history"
-	"chewbacca/internal/tui/components"
+	"jarvis/internal/config"
+	"jarvis/internal/history"
+	"jarvis/internal/tui/components"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -66,18 +66,17 @@ type Model struct {
 	agent  AgentInterface
 	config *config.Config
 
-	width       int
-	height      int
-	ready       bool
-	loading     bool
-	err         error
-	currentInput string // Store current input when navigating history
+	width        int
+	height       int
+	ready        bool
+	loading      bool
+	err          error
+	currentInput string
 }
 
 func New(ag AgentInterface, cfg *config.Config) Model {
 	model := cfg.Anthropic.Model
 
-	// Create history manager
 	historyMgr, _ := history.NewManager()
 
 	return Model{
