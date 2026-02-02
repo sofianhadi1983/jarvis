@@ -15,7 +15,7 @@ A sophisticated terminal-based AI coding assistant with a beautiful TUI built on
 ## Installation
 
 ```bash
-go build -o jarvis ./cmd/chewbacca
+go build -o jarvis ./cmd/jarvis
 ```
 
 ## Configuration
@@ -70,7 +70,7 @@ ui:
 
 ```
 jarvis/
-├── cmd/chewbacca/      # CLI entry point
+├── cmd/jarvis/         # CLI entry point
 ├── internal/
 │   ├── agent/          # Core agent with streaming
 │   ├── config/         # Configuration management
@@ -104,7 +104,7 @@ go test ./...
 go build ./...
 
 # Run
-go run ./cmd/chewbacca
+go run ./cmd/jarvis
 ```
 
 ## Personality
