@@ -1,0 +1,14 @@
+anthropic:
+  model: "claude-sonnet-4-5-20250929"
+  max_tokens: 8192
+
+app:
+  name: "Chewbacca"
+  prompt:
+    file: "agent.system.main.md"
+    variables:
+      agent_name: "Chewbacca"
+      role: "an expert AI coding assistant and terminal companion"
+
+ui:
+  theme: "dark"
