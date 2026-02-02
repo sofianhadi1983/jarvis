@@ -2,10 +2,13 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"jarvis/internal/tui/components"
+	"jarvis/internal/util"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -190,6 +193,9 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 			m.history.Clear()
 		}
 		m.agent.ClearHistory()
+		if wd, err := os.Getwd(); err == nil {
+			util.ClearAPIKeyFromEnv(filepath.Join(wd, ".env"))
+		}
 		return m, tea.Quit
 	}
 
