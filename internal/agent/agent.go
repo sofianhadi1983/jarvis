@@ -58,17 +58,19 @@ func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg
 		toolResults := []anthropic.ContentBlockParamUnion{}
 
 		for _, tb := range toolBlocks {
+			validInput := ensureValidJSON(tb.inputJSON)
+
 			assistantContent = append(assistantContent, anthropic.ContentBlockParamUnion{
 				OfToolUse: &anthropic.ToolUseBlockParam{
 					ID:    tb.id,
 					Name:  tb.name,
-					Input: json.RawMessage(tb.inputJSON),
+					Input: json.RawMessage(validInput),
 				},
 			})
 
 			callback(types.ToolStartMsg{Name: tb.name})
 
-			result := a.executeTool(tb.id, tb.name, json.RawMessage(tb.inputJSON))
+			result := a.executeTool(tb.id, tb.name, json.RawMessage(validInput))
 			toolResults = append(toolResults, result)
 
 			resultText := extractToolResult(result)
@@ -80,7 +82,7 @@ func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg
 
 			callback(types.ToolCallMsg{
 				Name:   tb.name,
-				Input:  tb.inputJSON,
+				Input:  validInput,
 				Result: resultText,
 				Diff:   diffInfo,
 			})
@@ -103,6 +105,20 @@ type toolBlock struct {
 	id        string
 	name      string
 	inputJSON string
+}
+
+func ensureValidJSON(input string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "{}"
+	}
+
+	var js json.RawMessage
+	if err := json.Unmarshal([]byte(input), &js); err != nil {
+		return "{}"
+	}
+
+	return input
 }
 
 func (a *Agent) runInferenceWithStreaming(ctx context.Context, callback func(msg any)) (string, []toolBlock, error) {
