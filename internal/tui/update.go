@@ -34,12 +34,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ToolName:  msg.Name,
 			ToolInput: msg.Input,
 			Content:   msg.Result,
+			Diff:      msg.Diff,
 			Timestamp: time.Now(),
 		})
+		if m.loading {
+			return m, m.status.SpinnerTick()
+		}
 		return m, nil
 
 	case ToolStartMsg:
 		m.status.SetStatus("Running " + msg.Name + "...")
+		if m.loading {
+			return m, m.status.SpinnerTick()
+		}
 		return m, nil
 
 	case ErrorMsg:
@@ -64,11 +71,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.status, cmd = m.status.Update(msg)
 	cmds = append(cmds, cmd)
 
-	if m.loading {
-		m.spinner, cmd = m.spinner.Update(msg)
-		cmds = append(cmds, cmd)
-	}
-
 	return m, tea.Batch(cmds...)
 }
 
@@ -76,6 +78,53 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
+
+	case tea.KeyEsc:
+		// Interrupt running process
+		if m.loading {
+			if cancel := getCurrentCancel(); cancel != nil {
+				cancel()
+				clearCurrentCancel()
+			}
+			m.loading = false
+			m.status.SetLoading(false)
+			m.status.SetStatus("Interrupted")
+			m.chat.AddMessage(components.ChatMessage{
+				Role:      components.RoleSystem,
+				Content:   "Process interrupted by user",
+				Timestamp: time.Now(),
+			})
+			return m, m.input.Focus()
+		}
+		return m, nil
+
+	case tea.KeyUp:
+		// Navigate to previous history entry
+		if !m.loading && m.history != nil {
+			// Store current input if we're starting navigation
+			if m.currentInput == "" && m.input.Value() != "" {
+				m.currentInput = m.input.Value()
+			}
+			if prev, ok := m.history.Previous(); ok {
+				m.input.SetValue(prev)
+			}
+		}
+		return m, nil
+
+	case tea.KeyDown:
+		// Navigate to next history entry
+		if !m.loading && m.history != nil {
+			if next, ok := m.history.Next(); ok {
+				if next == "" {
+					// Restore current input when reaching the end
+					m.input.SetValue(m.currentInput)
+					m.currentInput = ""
+				} else {
+					m.input.SetValue(next)
+				}
+			}
+		}
+		return m, nil
 
 	case tea.KeyEnter:
 		if m.loading {
@@ -96,10 +145,16 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 
-	inputHeight := 5
+	headerHeight := 5 // App name, model, workdir + padding
+	inputHeight := 3
 	statusHeight := 1
-	chatHeight := m.height - inputHeight - statusHeight - 2
+	chatHeight := m.height - headerHeight - inputHeight - statusHeight
 
+	if chatHeight < 5 {
+		chatHeight = 5
+	}
+
+	m.header.SetWidth(m.width)
 	m.chat.SetSize(m.width, chatHeight)
 	m.input.SetWidth(m.width)
 	m.status.SetWidth(m.width)
@@ -110,6 +165,9 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleStreamChunk(msg StreamChunkMsg) (tea.Model, tea.Cmd) {
 	m.chat.AppendToLastMessage(msg.Chunk)
+	if m.loading {
+		return m, m.status.SpinnerTick()
+	}
 	return m, nil
 }
 
@@ -118,6 +176,36 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	if input == "" {
 		return m, nil
 	}
+
+	lowercaseInput := strings.ToLower(input)
+
+	// Handle exit commands
+	if lowercaseInput == "exit" || lowercaseInput == "/exit" || lowercaseInput == "quit" || lowercaseInput == "/quit" {
+		return m, tea.Quit
+	}
+
+	// Handle clear command - clears history and context
+	if lowercaseInput == "/clear" || lowercaseInput == "clear" {
+		m.input.Reset()
+		m.chat.ClearMessages()
+		if m.history != nil {
+			m.history.Clear()
+		}
+		m.agent.ClearHistory()
+		m.chat.AddMessage(components.ChatMessage{
+			Role:      components.RoleSystem,
+			Content:   "History and context cleared",
+			Timestamp: time.Now(),
+		})
+		return m, nil
+	}
+
+	// Add to history
+	if m.history != nil {
+		m.history.Add(input)
+		m.history.ResetIndex()
+	}
+	m.currentInput = ""
 
 	m.chat.AddMessage(components.ChatMessage{
 		Role:      components.RoleUser,
@@ -128,22 +216,33 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	m.input.Reset()
 	m.loading = true
 	m.status.SetLoading(true)
+	m.status.SetStatus("Thinking...")
 	m.input.Blur()
 
 	m.chat.StartAssistantMessage()
 
-	return m, m.sendToAgent(input)
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	setCurrentCancel(cancel)
+
+	return m, tea.Batch(m.sendToAgent(ctx, input), m.status.SpinnerTick())
 }
 
-func (m Model) sendToAgent(input string) tea.Cmd {
+func (m Model) sendToAgent(ctx context.Context, input string) tea.Cmd {
+	agent := m.agent
 	return func() tea.Msg {
-		ctx := context.Background()
-
-		callback := func(msg tea.Msg) {
+		callback := func(msg any) {
+			if p := getProgram(); p != nil {
+				p.Send(msg)
+			}
 		}
 
-		err := m.agent.SendMessage(ctx, input, callback)
+		err := agent.SendMessage(ctx, input, callback)
 		if err != nil {
+			// Check if it was cancelled
+			if ctx.Err() == context.Canceled {
+				return nil // Don't send error for cancellation
+			}
 			return ErrorMsg{Err: err}
 		}
 

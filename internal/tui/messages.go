@@ -1,30 +1,11 @@
 package tui
 
-type ResponseMsg struct {
-	Content string
-}
+import "chewbacca/internal/types"
 
-type StreamChunkMsg struct {
-	Chunk string
-}
-
-type ToolCallMsg struct {
-	Name   string
-	Input  string
-	Result string
-}
-
-type ToolStartMsg struct {
-	Name string
-}
-
-type ToolEndMsg struct {
-	Name   string
-	Result string
-}
-
-type ErrorMsg struct {
-	Err error
-}
-
-type AgentReadyMsg struct{}
+type ResponseMsg = types.ResponseMsg
+type StreamChunkMsg = types.StreamChunkMsg
+type ToolCallMsg = types.ToolCallMsg
+type ToolStartMsg = types.ToolStartMsg
+type ToolEndMsg = types.ToolEndMsg
+type ErrorMsg = types.ErrorMsg
+type AgentReadyMsg = types.AgentReadyMsg

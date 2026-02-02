@@ -6,12 +6,26 @@ import (
 	"os"
 	"path"
 	"strings"
+
+	"github.com/sergi/go-diff/diffmatchpatch"
 )
 
 type UpdateFileInput struct {
 	Path   string `json:"path" jsonschema_description:"The path to the file."`
 	OldStr string `json:"old_str" jsonschema_description:"Text to search for - must match exactly and must only have one match"`
 	NewStr string `json:"new_str" jsonschema_description:"Text to replace old_str with"`
+}
+
+// UpdateResult contains the result of an update operation with diff info
+type UpdateResult struct {
+	Success      bool   `json:"success"`
+	Message      string `json:"message"`
+	FilePath     string `json:"file_path"`
+	UnifiedDiff  string `json:"unified_diff"` // Proper unified diff format
+	AddedLines   int    `json:"added_lines"`
+	RemovedLines int    `json:"removed_lines"`
+	StartLine    int    `json:"start_line"`
+	IsNewFile    bool   `json:"is_new_file"`
 }
 
 func createNewFile(filePath, content string) (string, error) {
@@ -28,7 +42,87 @@ func createNewFile(filePath, content string) (string, error) {
 		return "", fmt.Errorf("failed to create file: %w", err)
 	}
 
-	return fmt.Sprintf("Successfully created file %s", filePath), nil
+	// Generate diff for new file (all additions)
+	diff := generateUnifiedDiff("", content, filePath)
+
+	result := UpdateResult{
+		Success:      true,
+		Message:      fmt.Sprintf("Successfully created file %s", filePath),
+		FilePath:     filePath,
+		UnifiedDiff:  diff,
+		AddedLines:   countLines(content),
+		RemovedLines: 0,
+		StartLine:    1,
+		IsNewFile:    true,
+	}
+
+	jsonResult, _ := json.Marshal(result)
+	return string(jsonResult), nil
+}
+
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
+}
+
+// findLineNumber finds the line number where oldStr starts in the content
+func findLineNumber(content, oldStr string) int {
+	if oldStr == "" {
+		return 1
+	}
+	idx := strings.Index(content, oldStr)
+	if idx == -1 {
+		return 1
+	}
+	return strings.Count(content[:idx], "\n") + 1
+}
+
+// generateUnifiedDiff creates a unified diff between old and new content
+func generateUnifiedDiff(oldContent, newContent, filePath string) string {
+	dmp := diffmatchpatch.New()
+
+	// Generate line-based diff
+	a, b, c := dmp.DiffLinesToChars(oldContent, newContent)
+	diffs := dmp.DiffMain(a, b, false)
+	diffs = dmp.DiffCharsToLines(diffs, c)
+
+	// Build unified diff output
+	var sb strings.Builder
+
+	oldLines := strings.Split(oldContent, "\n")
+	newLines := strings.Split(newContent, "\n")
+
+	oldLineNum := 1
+	newLineNum := 1
+
+	for _, diff := range diffs {
+		lines := strings.Split(strings.TrimSuffix(diff.Text, "\n"), "\n")
+
+		switch diff.Type {
+		case diffmatchpatch.DiffEqual:
+			for range lines {
+				oldLineNum++
+				newLineNum++
+			}
+		case diffmatchpatch.DiffDelete:
+			for _, line := range lines {
+				sb.WriteString(fmt.Sprintf("%4d - %s\n", oldLineNum, line))
+				oldLineNum++
+			}
+		case diffmatchpatch.DiffInsert:
+			for _, line := range lines {
+				sb.WriteString(fmt.Sprintf("%4d + %s\n", newLineNum, line))
+				newLineNum++
+			}
+		}
+	}
+
+	_ = oldLines
+	_ = newLines
+
+	return sb.String()
 }
 
 func UpdateFile(input json.RawMessage) (string, error) {
@@ -60,6 +154,9 @@ func UpdateFile(input json.RawMessage) (string, error) {
 		return "", fmt.Errorf("old_str found %d times, must be unique", count)
 	}
 
+	// Find the starting line number
+	startLine := findLineNumber(oldContent, updateFileInput.OldStr)
+
 	newContent := strings.Replace(oldContent, updateFileInput.OldStr, updateFileInput.NewStr, 1)
 
 	err = os.WriteFile(updateFileInput.Path, []byte(newContent), 0644)
@@ -67,7 +164,26 @@ func UpdateFile(input json.RawMessage) (string, error) {
 		return "", err
 	}
 
-	return "OK", nil
+	// Generate unified diff
+	diff := generateUnifiedDiff(updateFileInput.OldStr, updateFileInput.NewStr, updateFileInput.Path)
+
+	// Calculate line changes
+	oldLines := countLines(updateFileInput.OldStr)
+	newLines := countLines(updateFileInput.NewStr)
+
+	result := UpdateResult{
+		Success:      true,
+		Message:      "OK",
+		FilePath:     updateFileInput.Path,
+		UnifiedDiff:  diff,
+		AddedLines:   newLines,
+		RemovedLines: oldLines,
+		StartLine:    startLine,
+		IsNewFile:    false,
+	}
+
+	jsonResult, _ := json.Marshal(result)
+	return string(jsonResult), nil
 }
 
 var UpdateFileDefinition = ToolDefinition{

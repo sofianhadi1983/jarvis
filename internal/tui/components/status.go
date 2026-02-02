@@ -3,7 +3,7 @@ package components
 import (
 	"fmt"
 
-	"chewbacca/internal/tui"
+	"chewbacca/internal/styles"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,22 +11,26 @@ import (
 )
 
 type StatusBar struct {
-	agentName string
-	spinner   spinner.Model
-	loading   bool
-	status    string
-	width     int
+	appName string
+	version string
+	model   string
+	spinner spinner.Model
+	loading bool
+	status  string
+	width   int
 }
 
-func NewStatusBar(agentName string) *StatusBar {
+func NewStatusBar(appName, version, model string) *StatusBar {
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
-	sp.Style = tui.SpinnerStyle
+	sp.Style = styles.SpinnerStyle
 
 	return &StatusBar{
-		agentName: agentName,
-		spinner:   sp,
-		status:    "Ready",
+		appName: appName,
+		version: version,
+		model:   model,
+		spinner: sp,
+		status:  "",
 	}
 }
 
@@ -39,7 +43,7 @@ func (s *StatusBar) SetLoading(loading bool) {
 	if loading {
 		s.status = "Thinking..."
 	} else {
-		s.status = "Ready"
+		s.status = ""
 	}
 }
 
@@ -57,38 +61,42 @@ func (s *StatusBar) Update(msg tea.Msg) (*StatusBar, tea.Cmd) {
 }
 
 func (s *StatusBar) View() string {
-	leftSection := s.agentName
+	helpStyle := lipgloss.NewStyle().
+		Foreground(styles.DimColor)
 
-	var middleSection string
-	if s.loading {
-		middleSection = fmt.Sprintf("%s %s", s.spinner.View(), s.status)
+	rightStyle := lipgloss.NewStyle().
+		Foreground(styles.DimColor)
+
+	escHintStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("244"))
+
+	// Left side: help text or status
+	var leftContent string
+	if s.loading && s.status != "" {
+		spinnerView := s.spinner.View()
+		leftContent = fmt.Sprintf("%s %s", spinnerView, s.status)
 	} else {
-		middleSection = s.status
+		leftContent = "Press / for commands or @ for files"
+	}
+	left := helpStyle.Render(leftContent)
+
+	// Right side: app name and model (and interrupt hint when loading)
+	var rightContent string
+	if s.loading {
+		escHint := escHintStyle.Render("Esc to interrupt")
+		rightContent = fmt.Sprintf("%s  %s %s [%s]", escHint, s.appName, s.version, s.model)
+	} else {
+		rightContent = fmt.Sprintf("%s %s [%s]", s.appName, s.version, s.model)
+	}
+	right := rightStyle.Render(rightContent)
+
+	// Calculate gap between left and right
+	gap := s.width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
 	}
 
-	rightSection := "Ctrl+C quit"
-
-	leftStyle := lipgloss.NewStyle().
-		Foreground(tui.AssistantColor).
-		Bold(true)
-
-	middleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
-
-	rightStyle := tui.HelpStyle
-
-	left := leftStyle.Render(leftSection)
-	middle := middleStyle.Render(middleSection)
-	right := rightStyle.Render(rightSection)
-
-	gap := s.width - lipgloss.Width(left) - lipgloss.Width(middle) - lipgloss.Width(right) - 4
-	if gap < 0 {
-		gap = 0
-	}
-
-	content := fmt.Sprintf(" %s  %s%*s%s ", left, middle, gap, "", right)
-
-	return tui.StatusBarStyle.Width(s.width).Render(content)
+	return fmt.Sprintf("%s%*s%s", left, gap, "", right)
 }
 
 func (s *StatusBar) SpinnerTick() tea.Cmd {

@@ -3,7 +3,7 @@ package tools
 import (
 	"encoding/json"
 
-	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/sofianhadi1983/anthropic-sdk-go"
 )
 
 type ToolDefinition struct {

@@ -5,7 +5,7 @@ import (
 
 	"chewbacca/pkg/tools"
 
-	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/sofianhadi1983/anthropic-sdk-go"
 )
 
 type Registry struct {

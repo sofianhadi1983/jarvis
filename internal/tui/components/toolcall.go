@@ -3,17 +3,17 @@ package components
 import (
 	"fmt"
 
-	"chewbacca/internal/tui"
+	"chewbacca/internal/styles"
 	"chewbacca/internal/util"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 type ToolCallView struct {
-	name      string
-	input     string
-	result    string
-	expanded  bool
+	name       string
+	input      string
+	result     string
+	expanded   bool
 	maxPreview int
 }
 
@@ -35,11 +35,11 @@ func (t *ToolCallView) Toggle() {
 
 func (t *ToolCallView) View() string {
 	headerStyle := lipgloss.NewStyle().
-		Foreground(tui.ToolColor).
+		Foreground(styles.ToolColor).
 		Bold(true)
 
 	inputStyle := lipgloss.NewStyle().
-		Foreground(tui.DimColor)
+		Foreground(styles.DimColor)
 
 	resultStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("252")).

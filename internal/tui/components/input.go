@@ -1,7 +1,7 @@
 package components
 
 import (
-	"chewbacca/internal/tui"
+	"chewbacca/internal/styles"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,12 +21,15 @@ func NewInputArea(placeholder string) *InputArea {
 	ta.ShowLineNumbers = false
 	ta.Prompt = ""
 	ta.CharLimit = 4000
-	ta.SetHeight(3)
+	ta.SetHeight(1)
 	ta.Focus()
 
+	// Remove all styling from textarea
 	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
 	ta.FocusedStyle.Base = lipgloss.NewStyle()
 	ta.BlurredStyle.Base = lipgloss.NewStyle()
+	ta.FocusedStyle.Placeholder = lipgloss.NewStyle().Foreground(styles.DimColor)
+	ta.BlurredStyle.Placeholder = lipgloss.NewStyle().Foreground(styles.DimColor)
 
 	return &InputArea{
 		textarea:    ta,
@@ -57,8 +60,22 @@ func (i *InputArea) Update(msg tea.Msg) (*InputArea, tea.Cmd) {
 }
 
 func (i *InputArea) View() string {
-	borderStyle := tui.InputBorderStyle.Width(i.width - 2)
-	return borderStyle.Render(i.textarea.View())
+	promptStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("252")).
+		Bold(true)
+
+	prompt := promptStyle.Render("> ")
+	content := i.textarea.View()
+
+	// Create the input line with prompt
+	inputLine := lipgloss.JoinHorizontal(lipgloss.Left, prompt, content)
+
+	// Add some padding
+	return lipgloss.NewStyle().
+		PaddingLeft(0).
+		PaddingTop(1).
+		PaddingBottom(0).
+		Render(inputLine)
 }
 
 func (i *InputArea) Value() string {
