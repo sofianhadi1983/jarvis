@@ -56,37 +56,45 @@ type AgentInterface interface {
 	ClearHistory()
 }
 
-type Model struct {
-	header  *components.Header
-	chat    *components.ChatView
-	input   *components.InputArea
-	status  *components.StatusBar
-	history *history.Manager
+type AgentFactory func(apiKey string) (AgentInterface, error)
 
-	agent  AgentInterface
-	config *config.Config
+type Model struct {
+	header     *components.Header
+	chat       *components.ChatView
+	input      *components.InputArea
+	status     *components.StatusBar
+	history    *history.Manager
+	loginModal *components.LoginModal
+
+	agent        AgentInterface
+	agentFactory AgentFactory
+	config       *config.Config
 
 	width        int
 	height       int
 	ready        bool
 	loading      bool
+	showLogin    bool
 	err          error
 	currentInput string
 }
 
-func New(ag AgentInterface, cfg *config.Config) Model {
+func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin bool) Model {
 	model := cfg.Anthropic.Model
 
 	historyMgr, _ := history.NewManager()
 
 	return Model{
-		header:  components.NewHeader(cfg.App.Name, Version, model),
-		chat:    components.NewChatView(cfg.App.Name),
-		input:   components.NewInputArea("Type your message..."),
-		status:  components.NewStatusBar(cfg.App.Name, Version, model),
-		history: historyMgr,
-		agent:   ag,
-		config:  cfg,
+		header:       components.NewHeader(cfg.App.Name, Version, model),
+		chat:         components.NewChatView(cfg.App.Name),
+		input:        components.NewInputArea("Type your message..."),
+		status:       components.NewStatusBar(cfg.App.Name, Version, model),
+		loginModal:   components.NewLoginModal(),
+		history:      historyMgr,
+		agent:        ag,
+		agentFactory: factory,
+		config:       cfg,
+		showLogin:    needsLogin,
 	}
 }
 

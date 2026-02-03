@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/auth"
 	"jarvis/internal/tui/components"
 	"jarvis/internal/util"
 
@@ -78,12 +79,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.showLogin {
+		return m.handleLoginKeyMsg(msg)
+	}
+
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
 
 	case tea.KeyEsc:
-		// Interrupt running process
 		if m.loading {
 			if cancel := getCurrentCancel(); cancel != nil {
 				cancel()
@@ -148,7 +152,9 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.width = msg.Width
 	m.height = msg.Height
 
-	headerHeight := 5 // App name, model, workdir + padding
+	m.loginModal.SetSize(m.width, m.height)
+
+	headerHeight := 5
 	inputHeight := 3
 	statusHeight := 1
 	chatHeight := m.height - headerHeight - inputHeight - statusHeight
@@ -162,6 +168,97 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.input.SetWidth(m.width)
 	m.status.SetWidth(m.width)
 	m.ready = true
+
+	return m, nil
+}
+
+func (m Model) handleLoginKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return m, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	m.loginModal, cmd = m.loginModal.Update(msg)
+
+	if m.loginModal.IsSubmitted() {
+		return m.handleLoginComplete()
+	}
+
+	return m, cmd
+}
+
+func (m Model) handleLoginComplete() (tea.Model, tea.Cmd) {
+	method := m.loginModal.GetMethod()
+
+	if method == components.LoginMethodAPIKey {
+		apiKey := m.loginModal.GetAPIKey()
+		if wd, err := os.Getwd(); err == nil {
+			util.SaveAPIKeyToEnv(filepath.Join(wd, ".env"), apiKey)
+		}
+
+		if m.agentFactory != nil {
+			agent, err := m.agentFactory(apiKey)
+			if err != nil {
+				m.chat.AddMessage(components.ChatMessage{
+					Role:      components.RoleSystem,
+					Content:   "Failed to initialize agent: " + err.Error(),
+					Timestamp: time.Now(),
+				})
+				return m, tea.Quit
+			}
+			m.agent = agent
+		}
+
+		m.showLogin = false
+		return m, m.input.Focus()
+	}
+
+	if method == components.LoginMethodSubscription {
+		code := m.loginModal.GetOAuthCode()
+		callbackState := m.loginModal.GetOAuthCallbackState()
+		oauthState := m.loginModal.GetOAuthState()
+
+		// Exchange code for tokens
+		tokens, err := auth.ExchangeCodeForTokens(code, callbackState, oauthState)
+		if err != nil {
+			// Reset login modal to allow retry
+			m.loginModal.SetError("OAuth failed: " + err.Error())
+			m.loginModal.Reset()
+			return m, nil
+		}
+
+		// Save tokens to .env
+		wd, err := os.Getwd()
+		if err != nil {
+			m.loginModal.SetError("Failed to get working directory: " + err.Error())
+			m.loginModal.Reset()
+			return m, nil
+		}
+
+		envPath := filepath.Join(wd, ".env")
+		if err := auth.SaveOAuthTokens(envPath, tokens); err != nil {
+			m.loginModal.SetError("Failed to save tokens: " + err.Error())
+			m.loginModal.Reset()
+			return m, nil
+		}
+
+		// Set env var for SDK
+		os.Setenv("ANTHROPIC_ACCESS_TOKEN", tokens.AccessToken)
+
+		// Create agent with empty apiKey (signals OAuth mode)
+		if m.agentFactory != nil {
+			agent, err := m.agentFactory("")
+			if err != nil {
+				m.loginModal.SetError("Failed to initialize agent: " + err.Error())
+				m.loginModal.Reset()
+				return m, nil
+			}
+			m.agent = agent
+		}
+
+		m.showLogin = false
+		return m, m.input.Focus()
+	}
 
 	return m, nil
 }
@@ -194,7 +291,7 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		}
 		m.agent.ClearHistory()
 		if wd, err := os.Getwd(); err == nil {
-			util.ClearAPIKeyFromEnv(filepath.Join(wd, ".env"))
+			auth.ClearAllTokens(filepath.Join(wd, ".env"))
 		}
 		return m, tea.Quit
 	}

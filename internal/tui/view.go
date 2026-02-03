@@ -9,6 +9,10 @@ func (m Model) View() string {
 		return "Initializing..."
 	}
 
+	if m.showLogin {
+		return m.loginModal.View()
+	}
+
 	headerView := m.header.View()
 	chatView := m.chat.View()
 	inputView := m.input.View()

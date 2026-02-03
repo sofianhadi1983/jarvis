@@ -11,17 +11,18 @@ import (
 	"jarvis/internal/types"
 
 	"github.com/sofianhadi1983/anthropic-sdk-go"
+	"github.com/sofianhadi1983/anthropic-sdk-go/shared/constant"
 )
 
 type Agent struct {
-	client       *anthropic.Client
+	client       anthropic.Client
 	registry     *registry.Registry
 	config       *config.Config
-	conversation []anthropic.MessageParam
+	conversation []anthropic.BetaMessageParam
 	systemPrompt string
 }
 
-func NewAgent(client *anthropic.Client, reg *registry.Registry, cfg *config.Config) (*Agent, error) {
+func NewAgent(client anthropic.Client, reg *registry.Registry, cfg *config.Config) (*Agent, error) {
 	systemPrompt, err := cfg.LoadSystemPrompt()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load system prompt: %w", err)
@@ -31,13 +32,13 @@ func NewAgent(client *anthropic.Client, reg *registry.Registry, cfg *config.Conf
 		client:       client,
 		registry:     reg,
 		config:       cfg,
-		conversation: []anthropic.MessageParam{},
+		conversation: []anthropic.BetaMessageParam{},
 		systemPrompt: systemPrompt,
 	}, nil
 }
 
 func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg any)) error {
-	userMessage := anthropic.NewUserMessage(anthropic.NewTextBlock(input))
+	userMessage := anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(input))
 	a.conversation = append(a.conversation, userMessage)
 
 	for {
@@ -50,46 +51,38 @@ func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg
 			return fmt.Errorf("received empty response from API")
 		}
 
-		assistantContent := []anthropic.ContentBlockParamUnion{}
+		assistantContent := []anthropic.BetaContentBlockParamUnion{}
 		if textContent != "" {
-			assistantContent = append(assistantContent, anthropic.NewTextBlock(textContent))
+			assistantContent = append(assistantContent, anthropic.NewBetaTextBlock(textContent))
 		}
 
-		toolResults := []anthropic.ContentBlockParamUnion{}
+		toolResults := []anthropic.BetaContentBlockParamUnion{}
 
 		for _, tb := range toolBlocks {
 			validInput := ensureValidJSON(tb.inputJSON)
 
-			assistantContent = append(assistantContent, anthropic.ContentBlockParamUnion{
-				OfToolUse: &anthropic.ToolUseBlockParam{
-					ID:    tb.id,
-					Name:  tb.name,
-					Input: json.RawMessage(validInput),
-				},
-			})
+			assistantContent = append(assistantContent, anthropic.NewBetaToolUseBlock(tb.id, json.RawMessage(validInput), tb.name))
 
 			callback(types.ToolStartMsg{Name: tb.name})
 
-			result := a.executeTool(tb.id, tb.name, json.RawMessage(validInput))
-			toolResults = append(toolResults, result)
-
-			resultText := extractToolResult(result)
+			result, isError := a.executeTool(tb.id, tb.name, json.RawMessage(validInput))
+			toolResults = append(toolResults, a.newBetaToolResult(tb.id, result, isError))
 
 			var diffInfo *types.DiffInfo
 			if tb.name == "Update" {
-				diffInfo = extractDiffInfo(resultText)
+				diffInfo = extractDiffInfo(result)
 			}
 
 			callback(types.ToolCallMsg{
 				Name:   tb.name,
 				Input:  validInput,
-				Result: resultText,
+				Result: result,
 				Diff:   diffInfo,
 			})
 		}
 
-		a.conversation = append(a.conversation, anthropic.MessageParam{
-			Role:    anthropic.MessageParamRoleAssistant,
+		a.conversation = append(a.conversation, anthropic.BetaMessageParam{
+			Role:    anthropic.BetaMessageParamRoleAssistant,
 			Content: assistantContent,
 		})
 
@@ -97,7 +90,7 @@ func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg
 			return nil
 		}
 
-		a.conversation = append(a.conversation, anthropic.NewUserMessage(toolResults...))
+		a.conversation = append(a.conversation, anthropic.NewBetaUserMessage(toolResults...))
 	}
 }
 
@@ -122,62 +115,81 @@ func ensureValidJSON(input string) string {
 }
 
 func (a *Agent) runInferenceWithStreaming(ctx context.Context, callback func(msg any)) (string, []toolBlock, error) {
-	tools := a.registry.ToAnthropicTools()
-
-	stream := a.client.Messages.NewStreaming(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(a.config.Anthropic.Model),
-		MaxTokens: a.config.Anthropic.MaxTokens,
-		Messages:  a.conversation,
-		System: []anthropic.TextBlockParam{
-			{Text: a.systemPrompt},
+	tools := a.registry.ToAnthropicBetaTools()
+	stream := a.client.Beta.Messages.NewStreaming(ctx, anthropic.BetaMessageNewParams{
+		System: []anthropic.BetaTextBlockParam{
+			{
+				Type: constant.Text("text"),
+				Text: "You are Claude Code, Anthropic's official CLI for Claude.",
+				CacheControl: anthropic.BetaCacheControlEphemeralParam{
+					Type: constant.Ephemeral("ephemeral"),
+					TTL:  anthropic.BetaCacheControlEphemeralTTLTTL1h,
+				},
+			},
+			{
+				Type: constant.Text("text"),
+				Text: a.systemPrompt,
+				CacheControl: anthropic.BetaCacheControlEphemeralParam{
+					Type: constant.Ephemeral("ephemeral"),
+					TTL:  anthropic.BetaCacheControlEphemeralTTLTTL1h,
+				},
+			},
 		},
-		Tools: tools,
+		MaxTokens: 32000,
+		Messages:  a.conversation,
+		Model:     anthropic.ModelClaudeSonnet4_5_20250929,
+		Tools:     tools,
 	})
 
-	var messageID string
+	message := anthropic.BetaMessage{}
 	var textContent strings.Builder
 	var toolBlocks []toolBlock
 	var toolInputBuilders []strings.Builder
-	var currentBlockIndex int64 = -1
+	var currentToolIndex int = -1
 
 	for stream.Next() {
 		event := stream.Current()
 
-		switch event.Type {
-		case "message_start":
-			messageID = event.Message.ID
+		if err := message.Accumulate(event); err != nil {
+			continue
+		}
 
-		case "content_block_start":
-			currentBlockIndex = event.Index
-			if event.ContentBlock.Type == "tool_use" {
+		switch eventVariant := event.AsAny().(type) {
+		case anthropic.BetaRawMessageStartEvent:
+
+		case anthropic.BetaRawContentBlockStartEvent:
+			switch blockVariant := eventVariant.ContentBlock.AsAny().(type) {
+			case anthropic.BetaToolUseBlock:
 				toolBlocks = append(toolBlocks, toolBlock{
-					id:   event.ContentBlock.ID,
-					name: event.ContentBlock.Name,
+					id:   blockVariant.ID,
+					name: blockVariant.Name,
 				})
 				toolInputBuilders = append(toolInputBuilders, strings.Builder{})
+				currentToolIndex = len(toolBlocks) - 1
 			}
 
-		case "content_block_delta":
-			if event.Delta.Type == "text_delta" {
-				textContent.WriteString(event.Delta.Text)
-				callback(types.StreamChunkMsg{Chunk: event.Delta.Text})
-			} else if event.Delta.Type == "input_json_delta" {
-				toolIdx := findToolBlockIndex(toolBlocks, currentBlockIndex)
-				if toolIdx >= 0 && toolIdx < len(toolInputBuilders) {
-					toolInputBuilders[toolIdx].WriteString(event.Delta.PartialJSON)
+		case anthropic.BetaRawContentBlockDeltaEvent:
+			switch deltaVariant := eventVariant.Delta.AsAny().(type) {
+			case anthropic.BetaTextDelta:
+				textContent.WriteString(deltaVariant.Text)
+				callback(types.StreamChunkMsg{Chunk: deltaVariant.Text})
+			case anthropic.BetaInputJSONDelta:
+				if currentToolIndex >= 0 && currentToolIndex < len(toolInputBuilders) {
+					toolInputBuilders[currentToolIndex].WriteString(deltaVariant.PartialJSON)
 				}
 			}
+
+		case anthropic.BetaRawContentBlockStopEvent:
+			currentToolIndex = -1
 		}
 	}
 
 	if err := stream.Err(); err != nil {
-		return "", nil, fmt.Errorf("streaming error: %w", err)
+		return "", nil, fmt.Errorf("streaming error: %v", err)
 	}
 
-	stream.Close()
-
-	if messageID == "" {
-		return "", nil, fmt.Errorf("no message received from API (did you set ANTHROPIC_API_KEY?)")
+	if message.ID == "" {
+		return "", nil, fmt.Errorf("no message received from API")
 	}
 
 	for i := range toolBlocks {
@@ -189,45 +201,33 @@ func (a *Agent) runInferenceWithStreaming(ctx context.Context, callback func(msg
 	return textContent.String(), toolBlocks, nil
 }
 
-func findToolBlockIndex(blocks []toolBlock, contentIndex int64) int {
-	textBlockCount := 0
-	for i := range blocks {
-		expectedIndex := int64(textBlockCount + i)
-		if expectedIndex == contentIndex {
-			return i
-		}
-	}
-	return len(blocks) - 1
-}
-
-func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.ContentBlockParamUnion {
+func (a *Agent) executeTool(id, name string, input json.RawMessage) (string, bool) {
 	toolDef, found := a.registry.Get(name)
 	if !found {
-		return anthropic.NewToolResultBlock(id, "tool not found: "+name, true)
+		return "tool not found: " + name, true
 	}
 
 	response, err := toolDef.Function(input)
 	if err != nil {
-		return anthropic.NewToolResultBlock(id, err.Error(), true)
+		return err.Error(), true
 	}
-	return anthropic.NewToolResultBlock(id, response, false)
+	return response, false
 }
 
-func extractToolResult(block anthropic.ContentBlockParamUnion) string {
-	if block.OfToolResult != nil {
-		if len(block.OfToolResult.Content) > 0 {
-			for _, c := range block.OfToolResult.Content {
-				if c.OfText != nil {
-					return c.OfText.Text
-				}
-			}
-		}
+func (a *Agent) newBetaToolResult(toolUseID, content string, isError bool) anthropic.BetaContentBlockParamUnion {
+	return anthropic.BetaContentBlockParamUnion{
+		OfToolResult: &anthropic.BetaToolResultBlockParam{
+			ToolUseID: toolUseID,
+			Content: []anthropic.BetaToolResultBlockParamContentUnion{
+				{OfText: &anthropic.BetaTextBlockParam{Text: content}},
+			},
+			IsError: anthropic.Bool(isError),
+		},
 	}
-	return ""
 }
 
 func (a *Agent) ClearHistory() {
-	a.conversation = []anthropic.MessageParam{}
+	a.conversation = []anthropic.BetaMessageParam{}
 }
 
 func extractDiffInfo(result string) *types.DiffInfo {

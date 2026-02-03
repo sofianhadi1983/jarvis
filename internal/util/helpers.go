@@ -56,3 +56,42 @@ func ClearAPIKeyFromEnv(envPath string) error {
 
 	return os.WriteFile(envPath, []byte(strings.Join(lines, "\n")+"\n"), 0644)
 }
+
+func SaveAPIKeyToEnv(envPath, apiKey string) error {
+	var lines []string
+
+	file, err := os.Open(envPath)
+	if err == nil {
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "ANTHROPIC_API_KEY=") {
+				lines = append(lines, line)
+			}
+		}
+		file.Close()
+		if err := scanner.Err(); err != nil {
+			return err
+		}
+	}
+
+	lines = append(lines, "ANTHROPIC_API_KEY="+apiKey)
+	return os.WriteFile(envPath, []byte(strings.Join(lines, "\n")+"\n"), 0600)
+}
+
+func GetAPIKeyFromEnv(envPath string) string {
+	file, err := os.Open(envPath)
+	if err != nil {
+		return ""
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "ANTHROPIC_API_KEY=") {
+			return strings.TrimPrefix(line, "ANTHROPIC_API_KEY=")
+		}
+	}
+	return ""
+}

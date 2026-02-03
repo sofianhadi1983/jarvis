@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"github.com/sofianhadi1983/anthropic-sdk-go"
 	"github.com/invopop/jsonschema"
+	"github.com/sofianhadi1983/anthropic-sdk-go"
 )
 
 func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
@@ -15,6 +15,8 @@ func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
 	schema := reflector.Reflect(v)
 
 	return anthropic.ToolInputSchemaParam{
+		Type:       "object",
 		Properties: schema.Properties,
+		Required:   schema.Required,
 	}
 }

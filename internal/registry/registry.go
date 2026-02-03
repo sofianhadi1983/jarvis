@@ -45,6 +45,25 @@ func (r *Registry) ToAnthropicTools() []anthropic.ToolUnionParam {
 	return anthropicTools
 }
 
+func (r *Registry) ToAnthropicBetaTools() []anthropic.BetaToolUnionParam {
+	betaTools := []anthropic.BetaToolUnionParam{}
+	for _, tool := range r.tools {
+		betaInputSchema := anthropic.BetaToolInputSchemaParam{
+			Type:       tool.InputSchema.Type,
+			Properties: tool.InputSchema.Properties,
+			Required:   tool.InputSchema.Required,
+		}
+		betaTools = append(betaTools, anthropic.BetaToolUnionParam{
+			OfTool: &anthropic.BetaToolParam{
+				Name:        tool.Name,
+				Description: anthropic.String(tool.Description),
+				InputSchema: betaInputSchema,
+			},
+		})
+	}
+	return betaTools
+}
+
 func (r *Registry) List() []string {
 	names := make([]string, 0, len(r.tools))
 	for name := range r.tools {
