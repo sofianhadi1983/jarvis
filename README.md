@@ -6,7 +6,9 @@ A sophisticated terminal-based AI coding assistant powered by Claude. Built with
 
 ## Demo
 
-![Jarvis in Action](demo.gif)
+<p align="center">
+  <img src="demo.gif" alt="Jarvis in Action" width="800">
+</p>
 
 ## Features
 
