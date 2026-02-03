@@ -1,40 +1,58 @@
 # Jarvis
 
-A sophisticated terminal-based AI coding assistant with a beautiful TUI built on Bubble Tea. Think of it as your personal AI butler for coding - refined, articulate, and always at your service.
+A sophisticated terminal-based AI coding assistant powered by Claude. Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) for a beautiful, responsive TUI experience.
+
+> *"At your service, sir."*
+
+## Demo
+
+![Jarvis in Action](demo.gif)
 
 ## Features
 
-- Interactive terminal UI with streaming responses
-- Jarvis-style communication - formal, witty, and always helpful
-- Explains complex concepts with real-world analogies
-- Tool execution: Read, ListFiles, Update, Bash, Fetch
-- Modular prompt system with variable substitution
-- Command history with session management
-- YAML-based configuration
+- **Streaming Responses** - Real-time token streaming with elegant rendering
+- **Agentic Tools** - Read, edit files, execute commands, fetch web content
+- **OAuth & API Key Auth** - Secure authentication via Anthropic OAuth or API key
+- **Modular Prompts** - Customizable system prompts with template variables
+- **Session History** - Navigate previous commands with arrow keys
+- **Beautiful TUI** - Dark theme with syntax highlighting and diff views
 
-## Installation
+## Quick Start
+
+### 1. Build
 
 ```bash
 go build -o jarvis ./cmd/jarvis
 ```
 
-## Configuration
+### 2. Authenticate
 
-1. Copy the environment template:
+**Option A: OAuth (Recommended)**
+```bash
+./jarvis
+# Select "Login with Claude" and follow browser prompts
+```
+
+**Option B: API Key**
 ```bash
 cp .env.example .env
+# Add your key: ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-2. Add your Anthropic API key to `.env`:
-```
-ANTHROPIC_API_KEY=your_api_key_here
+### 3. Run
+
+```bash
+./jarvis
 ```
 
-3. Customize `config.yaml` as needed:
+## Configuration
+
+Customize behavior in `config.yaml`:
+
 ```yaml
 anthropic:
   model: "claude-sonnet-4-5-20250929"
-  max_tokens: 8192
+  max_tokens: 32000
 
 app:
   name: "Jarvis"
@@ -42,75 +60,63 @@ app:
     file: "agent.system.main.md"
     variables:
       agent_name: "Jarvis"
-      role: "a sophisticated AI coding assistant, much like the trusted companion to Mr. Stark"
+      role: "a sophisticated AI coding assistant"
 
 ui:
   theme: "dark"
 ```
 
-## Usage
+## Keyboard Shortcuts
 
-```bash
-./jarvis
-```
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit message |
+| `↑` / `↓` | Navigate history |
+| `Esc` | Interrupt process |
+| `Ctrl+C` | Quit |
 
-### Keyboard Shortcuts
+## Commands
 
-- `Enter` - Submit message
-- `Up/Down` - Navigate command history
-- `Esc` - Interrupt running process
-- `Ctrl+C` - Quit
+| Command | Description |
+|---------|-------------|
+| `/clear` | Clear chat history |
+| `exit` | Exit application |
 
-### Commands
+## Tools
 
-- `/clear` or `clear` - Clear chat history and context
-- `exit` or `quit` - Exit the application
+| Tool | Description |
+|------|-------------|
+| **Read** | Read file contents |
+| **ListFiles** | List directory tree |
+| **Update** | Edit files with precise text replacement |
+| **Bash** | Execute shell commands |
+| **Fetch** | Fetch and extract web content |
 
 ## Project Structure
 
 ```
 jarvis/
-├── cmd/jarvis/         # CLI entry point
+├── cmd/jarvis/         # Entry point
 ├── internal/
-│   ├── agent/          # Core agent with streaming
-│   ├── config/         # Configuration management
-│   ├── history/        # Command history management
-│   ├── prompt/         # Prompt loading and templating
+│   ├── agent/          # Claude streaming agent
+│   ├── auth/           # OAuth & API key auth
+│   ├── config/         # YAML configuration
+│   ├── prompt/         # Template loader
 │   ├── registry/       # Tool registry
-│   ├── tui/            # Bubble Tea TUI
-│   │   └── components/ # TUI components
-│   └── util/           # Utility functions
+│   └── tui/            # Bubble Tea UI
 ├── pkg/tools/          # Tool implementations
-├── prompts/            # System prompt files
-├── config.yaml         # Configuration
-└── .env                # Environment variables
+├── prompts/            # System prompt templates
+└── config.yaml
 ```
-
-## Available Tools
-
-- **Read**: Read file contents
-- **ListFiles**: List directory structure
-- **Update**: Edit files with precise replacements
-- **Bash**: Execute shell commands
-- **Fetch**: Fetch web content
 
 ## Development
 
 ```bash
-# Run tests
-go test ./...
-
-# Build
-go build ./...
-
-# Run
-go run ./cmd/jarvis
+go test ./...      # Run tests
+go build ./...     # Build
+go run ./cmd/jarvis # Run directly
 ```
 
-## Personality
+## License
 
-Jarvis communicates with refined eloquence and dry wit:
-- Addresses users respectfully ("Sir", "If I may suggest...")
-- Offers real-world analogies for complex technical concepts
-- Always verifies understanding after explaining difficult topics
-- Maintains professionalism with a subtle sense of humor
+MIT
