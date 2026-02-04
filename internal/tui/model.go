@@ -68,6 +68,7 @@ type Model struct {
 	history        *history.Manager
 	loginModal     *components.LoginModal
 	imageIndicator *components.ImageIndicator
+	autocomplete   *components.Autocomplete
 
 	agent        AgentInterface
 	agentFactory AgentFactory
@@ -94,6 +95,7 @@ func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin
 		status:         components.NewStatusBar(cfg.App.Name, Version, model),
 		loginModal:     components.NewLoginModal(),
 		imageIndicator: components.NewImageIndicator(),
+		autocomplete:   components.NewAutocomplete(),
 		history:        historyMgr,
 		agent:          ag,
 		agentFactory:   factory,

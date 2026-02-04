@@ -16,26 +16,24 @@ func (m Model) View() string {
 	headerView := m.header.View()
 	chatView := m.chat.View()
 	imageIndicatorView := m.imageIndicator.View()
+	autocompleteView := m.autocomplete.View()
 	inputView := m.input.View()
 	statusView := m.status.View()
 
-	// Build view with optional image indicator
+	// Build list of views to join
+	views := []string{headerView, chatView}
+
+	// Add image indicator if present
 	if imageIndicatorView != "" {
-		return lipgloss.JoinVertical(
-			lipgloss.Left,
-			headerView,
-			chatView,
-			imageIndicatorView,
-			inputView,
-			statusView,
-		)
+		views = append(views, imageIndicatorView)
 	}
 
-	return lipgloss.JoinVertical(
-		lipgloss.Left,
-		headerView,
-		chatView,
-		inputView,
-		statusView,
-	)
+	// Add autocomplete popup if visible
+	if autocompleteView != "" {
+		views = append(views, autocompleteView)
+	}
+
+	views = append(views, inputView, statusView)
+
+	return lipgloss.JoinVertical(lipgloss.Left, views...)
 }

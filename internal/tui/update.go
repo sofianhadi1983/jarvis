@@ -11,6 +11,7 @@ import (
 	"jarvis/internal/auth"
 	"jarvis/internal/clipboard"
 	"jarvis/internal/image"
+	"jarvis/internal/references"
 	"jarvis/internal/tui/components"
 	"jarvis/internal/util"
 
@@ -84,6 +85,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.showLogin {
 		return m.handleLoginKeyMsg(msg)
+	}
+
+	if m.autocomplete.IsVisible() {
+		switch msg.Type {
+		case tea.KeyUp:
+			m.autocomplete.SelectPrev()
+			return m, nil
+		case tea.KeyDown:
+			m.autocomplete.SelectNext()
+			return m, nil
+		case tea.KeyTab, tea.KeyEnter:
+			if m.autocomplete.HasItems() {
+				path := m.autocomplete.GetSelectedPath()
+				atPos := m.autocomplete.GetAtPosition()
+				m.input.InsertCompletion(atPos, "@"+path)
+			}
+			m.autocomplete.Hide()
+			return m, nil
+		case tea.KeyEsc:
+			m.autocomplete.Hide()
+			return m, nil
+		case tea.KeyBackspace:
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			m.updateAutocompleteQuery()
+			return m, cmd
+		case tea.KeyRunes:
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			m.updateAutocompleteQuery()
+			return m, cmd
+		}
 	}
 
 	switch msg.Type {
@@ -172,11 +205,44 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.submitMessage()
+
+	case tea.KeyRunes:
+		for _, r := range msg.Runes {
+			if r == '@' {
+				atPos := m.input.CursorPosition()
+				var cmd tea.Cmd
+				m.input, cmd = m.input.Update(msg)
+				m.autocomplete.Show(atPos)
+				return m, cmd
+			}
+		}
 	}
 
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+func (m *Model) updateAutocompleteQuery() {
+	if !m.autocomplete.IsVisible() {
+		return
+	}
+
+	atPos := m.autocomplete.GetAtPosition()
+	query := m.input.GetTextAfter(atPos + 1)
+
+	if strings.Contains(query, " ") {
+		m.autocomplete.Hide()
+		return
+	}
+
+	value := m.input.Value()
+	if atPos >= len(value) || (atPos < len(value) && value[atPos] != '@') {
+		m.autocomplete.Hide()
+		return
+	}
+
+	m.autocomplete.SetQuery(query)
 }
 
 func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
@@ -198,6 +264,7 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.chat.SetSize(m.width, chatHeight)
 	m.input.SetWidth(m.width)
 	m.status.SetWidth(m.width)
+	m.autocomplete.SetWidth(m.width)
 	m.ready = true
 
 	return m, nil
@@ -332,6 +399,9 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Hide autocomplete if visible
+	m.autocomplete.Hide()
+
 	lowercaseInput := strings.ToLower(input)
 
 	// Handle exit commands
@@ -368,15 +438,15 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Parse input for image references
-	parsed := image.ParseInput(input)
+	// Parse input for file references (images AND text files)
+	parsed := references.ParseInput(input)
 
-	// Show errors for failed image loads
+	// Show errors for failed file loads
 	if parsed.HasErrors() {
 		for _, errMsg := range parsed.Errors {
 			m.chat.AddMessage(components.ChatMessage{
 				Role:      components.RoleSystem,
-				Content:   "Image error: " + errMsg,
+				Content:   "File error: " + errMsg,
 				Timestamp: time.Now(),
 			})
 		}
@@ -384,7 +454,11 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 
 	// Combine pasted images with @referenced images
 	pastedImages := m.imageIndicator.Images()
-	allImages := append(pastedImages, parsed.Images...)
+	referencedImages := parsed.GetImages()
+	allImages := append(pastedImages, referencedImages...)
+
+	// Combine text with file contents
+	fullText := parsed.CombineTextContent()
 
 	// Add to history (original input with @references)
 	if m.history != nil && input != "" {
@@ -393,17 +467,18 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	}
 	m.currentInput = ""
 
-	// Build display content with image indicators
+	// Build display content with file indicators
 	displayContent := parsed.Text
-	if len(allImages) > 0 {
-		var indicators []string
-		// Add pasted image indicators
-		for i := range pastedImages {
-			indicators = append(indicators, fmt.Sprintf("[Pasted Image #%d]", i+1))
-		}
-		// Add @referenced image indicators
-		indicators = append(indicators, parsed.ImageIndicators()...)
+	var indicators []string
 
+	// Add pasted image indicators
+	for i := range pastedImages {
+		indicators = append(indicators, fmt.Sprintf("[Pasted Image #%d]", i+1))
+	}
+	// Add @referenced file indicators
+	indicators = append(indicators, parsed.FileIndicators()...)
+
+	if len(indicators) > 0 {
 		if displayContent != "" {
 			displayContent += "\n"
 		}
@@ -433,10 +508,10 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 
 	// Use sendToAgentWithImages if we have images, otherwise use sendToAgent
 	if len(allImages) > 0 {
-		combinedParsed := &image.ParsedInput{Text: parsed.Text, Images: allImages}
+		combinedParsed := &image.ParsedInput{Text: fullText, Images: allImages}
 		return m, tea.Batch(m.sendToAgentWithImages(ctx, combinedParsed), m.status.SpinnerTick())
 	}
-	return m, tea.Batch(m.sendToAgent(ctx, parsed.Text), m.status.SpinnerTick())
+	return m, tea.Batch(m.sendToAgent(ctx, fullText), m.status.SpinnerTick())
 }
 
 func (m Model) sendToAgent(ctx context.Context, input string) tea.Cmd {

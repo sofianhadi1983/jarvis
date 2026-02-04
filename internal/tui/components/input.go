@@ -90,3 +90,27 @@ func (i *InputArea) SetValue(s string) {
 func (i *InputArea) Focused() bool {
 	return i.focused
 }
+
+func (i *InputArea) CursorPosition() int {
+	return len(i.textarea.Value())
+}
+
+func (i *InputArea) InsertCompletion(startPos int, newText string) {
+	value := i.textarea.Value()
+	if startPos < 0 {
+		startPos = 0
+	}
+	if startPos > len(value) {
+		startPos = len(value)
+	}
+	newValue := value[:startPos] + newText
+	i.textarea.SetValue(newValue)
+}
+
+func (i *InputArea) GetTextAfter(pos int) string {
+	value := i.textarea.Value()
+	if pos < 0 || pos >= len(value) {
+		return ""
+	}
+	return value[pos:]
+}
