@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"jarvis/internal/config"
+	"jarvis/internal/image"
 	"jarvis/internal/registry"
 	"jarvis/internal/types"
 
@@ -41,6 +42,48 @@ func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg
 	userMessage := anthropic.NewBetaUserMessage(anthropic.NewBetaTextBlock(input))
 	a.conversation = append(a.conversation, userMessage)
 
+	return a.processConversation(ctx, callback)
+}
+
+// SendMessageWithImages sends a message with images to the agent.
+// Images are added before text content for better understanding (per Anthropic docs).
+func (a *Agent) SendMessageWithImages(ctx context.Context, text string, images []*image.ImageInput, callback func(msg any)) error {
+	contentBlocks := []anthropic.BetaContentBlockParamUnion{}
+
+	// Add images first (better understanding per Anthropic docs)
+	for _, img := range images {
+		if img.IsURL {
+			contentBlocks = append(contentBlocks, anthropic.NewBetaImageBlock(
+				anthropic.BetaURLImageSourceParam{
+					URL: img.URL,
+				},
+			))
+		} else {
+			contentBlocks = append(contentBlocks, anthropic.NewBetaImageBlock(
+				anthropic.BetaBase64ImageSourceParam{
+					Data:      img.Data,
+					MediaType: anthropic.BetaBase64ImageSourceMediaType(img.MediaType),
+				},
+			))
+		}
+	}
+
+	// Add text content after images
+	if text != "" {
+		contentBlocks = append(contentBlocks, anthropic.NewBetaTextBlock(text))
+	}
+
+	userMessage := anthropic.BetaMessageParam{
+		Role:    anthropic.BetaMessageParamRoleUser,
+		Content: contentBlocks,
+	}
+	a.conversation = append(a.conversation, userMessage)
+
+	return a.processConversation(ctx, callback)
+}
+
+// processConversation handles the inference loop for both text-only and image messages.
+func (a *Agent) processConversation(ctx context.Context, callback func(msg any)) error {
 	for {
 		textContent, toolBlocks, err := a.runInferenceWithStreaming(ctx, callback)
 		if err != nil {
