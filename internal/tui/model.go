@@ -6,6 +6,7 @@ import (
 
 	"jarvis/internal/config"
 	"jarvis/internal/history"
+	"jarvis/internal/image"
 	"jarvis/internal/tui/components"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -53,6 +54,7 @@ func clearCurrentCancel() {
 
 type AgentInterface interface {
 	SendMessage(ctx context.Context, input string, callback func(msg any)) error
+	SendMessageWithImages(ctx context.Context, text string, images []*image.ImageInput, callback func(msg any)) error
 	ClearHistory()
 }
 
