@@ -12,15 +12,32 @@ type ToolCallMsg struct {
 	Name   string
 	Input  string
 	Result string
-	Diff   *DiffInfo // Optional diff info for file updates
+	Diff   *DiffInfo
 }
 
-// DiffInfo contains diff information for file updates
+type DiffLine struct {
+	Type      DiffLineType
+	OldLineNo int
+	NewLineNo int
+	Content   string
+}
+
+type DiffLineType int
+
+const (
+	DiffLineContext DiffLineType = iota
+	DiffLineAdded
+	DiffLineRemoved
+	DiffLineSkip
+)
+
 type DiffInfo struct {
 	FilePath     string
-	UnifiedDiff  string // Pre-formatted diff with line numbers
+	Operation    string
 	AddedLines   int
 	RemovedLines int
+	Lines        []DiffLine
+	UnifiedDiff  string
 	StartLine    int
 }
 

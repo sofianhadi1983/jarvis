@@ -291,11 +291,142 @@ func extractDiffInfo(result string) *types.DiffInfo {
 		return nil
 	}
 
+	lines := parseUnifiedDiff(updateResult.UnifiedDiff, updateResult.StartLine)
+
 	return &types.DiffInfo{
 		FilePath:     updateResult.FilePath,
 		UnifiedDiff:  updateResult.UnifiedDiff,
 		AddedLines:   updateResult.AddedLines,
 		RemovedLines: updateResult.RemovedLines,
 		StartLine:    updateResult.StartLine,
+		Lines:        lines,
 	}
+}
+
+func parseUnifiedDiff(unifiedDiff string, startLine int) []types.DiffLine {
+	if unifiedDiff == "" {
+		return nil
+	}
+
+	var result []types.DiffLine
+	lines := strings.Split(unifiedDiff, "\n")
+
+	oldLineNo := startLine
+	newLineNo := startLine
+	if oldLineNo == 0 {
+		oldLineNo = 1
+		newLineNo = 1
+	}
+
+	contextBefore := 3
+	contextAfter := 3
+	maxLines := 20
+
+	var diffLines []struct {
+		line      string
+		oldNo     int
+		newNo     int
+		lineType  types.DiffLineType
+	}
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		if strings.HasPrefix(line, "@@") {
+			continue
+		}
+
+		if strings.HasPrefix(line, "-") {
+			diffLines = append(diffLines, struct {
+				line     string
+				oldNo    int
+				newNo    int
+				lineType types.DiffLineType
+			}{
+				line:     strings.TrimPrefix(line, "-"),
+				oldNo:    oldLineNo,
+				newNo:    0,
+				lineType: types.DiffLineRemoved,
+			})
+			oldLineNo++
+		} else if strings.HasPrefix(line, "+") {
+			diffLines = append(diffLines, struct {
+				line     string
+				oldNo    int
+				newNo    int
+				lineType types.DiffLineType
+			}{
+				line:     strings.TrimPrefix(line, "+"),
+				oldNo:    0,
+				newNo:    newLineNo,
+				lineType: types.DiffLineAdded,
+			})
+			newLineNo++
+		} else {
+			content := strings.TrimPrefix(line, " ")
+			diffLines = append(diffLines, struct {
+				line     string
+				oldNo    int
+				newNo    int
+				lineType types.DiffLineType
+			}{
+				line:     content,
+				oldNo:    oldLineNo,
+				newNo:    newLineNo,
+				lineType: types.DiffLineContext,
+			})
+			oldLineNo++
+			newLineNo++
+		}
+	}
+
+	changeIndices := []int{}
+	for i, dl := range diffLines {
+		if dl.lineType == types.DiffLineAdded || dl.lineType == types.DiffLineRemoved {
+			changeIndices = append(changeIndices, i)
+		}
+	}
+
+	if len(changeIndices) == 0 {
+		return nil
+	}
+
+	includeLines := make(map[int]bool)
+	for _, idx := range changeIndices {
+		for i := idx - contextBefore; i <= idx+contextAfter; i++ {
+			if i >= 0 && i < len(diffLines) {
+				includeLines[i] = true
+			}
+		}
+	}
+
+	lastIncluded := -2
+	lineCount := 0
+	for i := 0; i < len(diffLines) && lineCount < maxLines; i++ {
+		if !includeLines[i] {
+			continue
+		}
+
+		if lastIncluded >= 0 && i > lastIncluded+1 {
+			result = append(result, types.DiffLine{
+				Type:    types.DiffLineSkip,
+				Content: "...",
+			})
+			lineCount++
+		}
+
+		dl := diffLines[i]
+		result = append(result, types.DiffLine{
+			Type:      dl.lineType,
+			OldLineNo: dl.oldNo,
+			NewLineNo: dl.newNo,
+			Content:   dl.line,
+		})
+		lineCount++
+		lastIncluded = i
+	}
+
+	return result
 }

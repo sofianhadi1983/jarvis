@@ -125,17 +125,9 @@ func (c *ChatView) View() string {
 func (c *ChatView) renderMessages() string {
 	var sb strings.Builder
 
-	bulletStyle := lipgloss.NewStyle().
-		Foreground(styles.DimColor)
-
-	userBulletStyle := lipgloss.NewStyle().
-		Foreground(styles.UserColor)
-
-	dimStyle := lipgloss.NewStyle().
-		Foreground(styles.DimColor)
-
-	textStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("252"))
+	bulletStyle := lipgloss.NewStyle().Foreground(styles.DimColor)
+	userBulletStyle := lipgloss.NewStyle().Foreground(styles.UserColor)
+	textStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
 
 	wrapWidth := c.width - 4
 	if wrapWidth < 40 {
@@ -191,28 +183,11 @@ func (c *ChatView) renderMessages() string {
 			sb.WriteString("\n")
 
 		case RoleTool:
-			toolDesc := formatToolInput(msg.ToolName, msg.ToolInput)
-
-			sb.WriteString(bulletStyle.Render("* "))
-			sb.WriteString(styles.ToolNameStyle.Render(msg.ToolName))
-			if toolDesc != "" {
-				sb.WriteString(dimStyle.Render("(" + toolDesc + ")"))
-			}
-			sb.WriteString("\n")
-
-			if msg.Diff != nil {
-				sb.WriteString(renderDiff(msg.Diff))
-			} else if msg.Content != "" {
-				resultPreview := util.TruncateString(msg.Content, 80)
-				sb.WriteString(dimStyle.Render("  L "))
-				sb.WriteString(dimStyle.Render(resultPreview))
-				sb.WriteString("\n")
-			}
-			sb.WriteString("\n")
+			sb.WriteString(c.renderToolMessage(msg))
 
 		case RoleSystem:
 			sb.WriteString(bulletStyle.Render("* "))
-			sb.WriteString(dimStyle.Render(msg.Content))
+			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(msg.Content))
 			sb.WriteString("\n\n")
 		}
 	}
@@ -220,45 +195,167 @@ func (c *ChatView) renderMessages() string {
 	return sb.String()
 }
 
-func renderDiff(diff *types.DiffInfo) string {
+func (c *ChatView) renderToolMessage(msg ChatMessage) string {
 	var sb strings.Builder
 
-	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	dimStyle := lipgloss.NewStyle().Foreground(styles.DimColor)
+	bulletStyle := lipgloss.NewStyle().Foreground(styles.ToolColor)
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	pathStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
-	summary := fmt.Sprintf("  L Added %d lines", diff.AddedLines)
-	if diff.RemovedLines > 0 {
-		summary += fmt.Sprintf(", removed %d lines", diff.RemovedLines)
+	toolDesc := formatToolInput(msg.ToolName, msg.ToolInput)
+
+	sb.WriteString(bulletStyle.Render("* "))
+	sb.WriteString(headerStyle.Render(msg.ToolName))
+	if toolDesc != "" {
+		sb.WriteString(pathStyle.Render("(" + toolDesc + ")"))
 	}
-	sb.WriteString(dimStyle.Render(summary))
 	sb.WriteString("\n")
 
+	if msg.Diff != nil && len(msg.Diff.Lines) > 0 {
+		var summaryParts []string
+		if msg.Diff.RemovedLines > 0 {
+			summaryParts = append(summaryParts, fmt.Sprintf("Removed %d lines", msg.Diff.RemovedLines))
+		}
+		if msg.Diff.AddedLines > 0 {
+			summaryParts = append(summaryParts, fmt.Sprintf("Added %d lines", msg.Diff.AddedLines))
+		}
+		if len(summaryParts) > 0 {
+			sb.WriteString("  L ")
+			sb.WriteString(summaryStyle.Render(strings.Join(summaryParts, ", ")))
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString(c.renderDiffLines(msg.Diff))
+	} else if msg.Diff != nil && msg.Diff.UnifiedDiff != "" {
+		sb.WriteString(c.renderUnifiedDiff(msg.Diff))
+	} else if msg.Content != "" {
+		resultStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+		resultPreview := util.TruncateString(msg.Content, 100)
+		sb.WriteString("  L ")
+		sb.WriteString(resultStyle.Render(resultPreview))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+
+	return sb.String()
+}
+
+func (c *ChatView) renderDiffLines(diff *types.DiffInfo) string {
+	var sb strings.Builder
+
+	lineNumStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	removedLineNumStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	addedLineNumStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	contextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	skipStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	maxLineNum := 0
+	for _, line := range diff.Lines {
+		if line.OldLineNo > maxLineNum {
+			maxLineNum = line.OldLineNo
+		}
+		if line.NewLineNo > maxLineNum {
+			maxLineNum = line.NewLineNo
+		}
+	}
+	lineNumWidth := len(fmt.Sprintf("%d", maxLineNum))
+	if lineNumWidth < 3 {
+		lineNumWidth = 3
+	}
+
+	for _, line := range diff.Lines {
+		switch line.Type {
+		case types.DiffLineRemoved:
+			lineNum := fmt.Sprintf("%*d", lineNumWidth, line.OldLineNo)
+			sb.WriteString("    ")
+			sb.WriteString(removedLineNumStyle.Render(lineNum + " -"))
+			sb.WriteString(removedStyle.Render(" " + line.Content))
+			sb.WriteString("\n")
+
+		case types.DiffLineAdded:
+			lineNum := fmt.Sprintf("%*d", lineNumWidth, line.NewLineNo)
+			sb.WriteString("    ")
+			sb.WriteString(addedLineNumStyle.Render(lineNum + "  "))
+			sb.WriteString(addedStyle.Render(" " + line.Content))
+			sb.WriteString("\n")
+
+		case types.DiffLineContext:
+			lineNum := fmt.Sprintf("%*d", lineNumWidth, line.NewLineNo)
+			sb.WriteString("    ")
+			sb.WriteString(lineNumStyle.Render(lineNum + "  "))
+			sb.WriteString(contextStyle.Render(" " + line.Content))
+			sb.WriteString("\n")
+
+		case types.DiffLineSkip:
+			sb.WriteString("    ")
+			sb.WriteString(skipStyle.Render("..."))
+			sb.WriteString("\n")
+		}
+	}
+
+	return sb.String()
+}
+
+func (c *ChatView) renderUnifiedDiff(diff *types.DiffInfo) string {
+	var sb strings.Builder
+
+	summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	lineNumStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+	removedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	addedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	contextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+
+	var summaryParts []string
+	if diff.AddedLines > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("Added %d lines", diff.AddedLines))
+	}
+	if diff.RemovedLines > 0 {
+		summaryParts = append(summaryParts, fmt.Sprintf("removed %d lines", diff.RemovedLines))
+	}
+	if len(summaryParts) > 0 {
+		sb.WriteString("  L ")
+		sb.WriteString(summaryStyle.Render(strings.Join(summaryParts, ", ")))
+		sb.WriteString("\n")
+	}
+
 	lines := strings.Split(diff.UnifiedDiff, "\n")
+	lineNum := diff.StartLine
+	if lineNum == 0 {
+		lineNum = 1
+	}
+
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
 
-		if len(line) > 6 {
-			marker := ""
-			if idx := strings.Index(line, " - "); idx > 0 && idx < 6 {
-				marker = "-"
-			} else if idx := strings.Index(line, " + "); idx > 0 && idx < 6 {
-				marker = "+"
-			}
-
-			if marker == "-" {
-				sb.WriteString(removedStyle.Render(line))
-			} else if marker == "+" {
-				sb.WriteString(addedStyle.Render(line))
-			} else {
-				sb.WriteString(dimStyle.Render(line))
-			}
-		} else {
-			sb.WriteString(dimStyle.Render(line))
+		if strings.HasPrefix(line, "@@") {
+			continue
 		}
-		sb.WriteString("\n")
+
+		lineNumStr := fmt.Sprintf("%4d", lineNum)
+
+		if strings.HasPrefix(line, "-") {
+			sb.WriteString("    ")
+			sb.WriteString(lineNumStyle.Render(lineNumStr + " -"))
+			sb.WriteString(removedStyle.Render(" " + strings.TrimPrefix(line, "-")))
+			sb.WriteString("\n")
+		} else if strings.HasPrefix(line, "+") {
+			sb.WriteString("    ")
+			sb.WriteString(lineNumStyle.Render(lineNumStr + "  "))
+			sb.WriteString(addedStyle.Render(" " + strings.TrimPrefix(line, "+")))
+			sb.WriteString("\n")
+			lineNum++
+		} else {
+			sb.WriteString("    ")
+			sb.WriteString(lineNumStyle.Render(lineNumStr + "  "))
+			sb.WriteString(contextStyle.Render(" " + strings.TrimPrefix(line, " ")))
+			sb.WriteString("\n")
+			lineNum++
+		}
 	}
 
 	return sb.String()
@@ -293,18 +390,18 @@ func formatToolInput(toolName, input string) string {
 
 func stripEmojis(text string) string {
 	emojis := []string{
-		"📦", "🎯", "🚀", "💡", "✨", "🔧", "⚙️", "📝", "📁", "📂",
-		"✅", "❌", "⚠️", "💻", "🖥️", "📊", "📈", "📉", "🔍", "🔎",
-		"💾", "📀", "💿", "🗂️", "🗃️", "🗄️", "📋", "📌", "📍", "🏷️",
-		"🔑", "🗝️", "🔒", "🔓", "🛠️", "⛏️", "🔨", "🪓", "⚒️", "🛡️",
-		"⚡", "🔥", "💥", "✴️", "❇️", "🌟", "⭐", "🌈", "☀️", "🌙",
-		"🎉", "🎊", "🎁", "🎈", "🏆", "🥇", "🥈", "🥉", "🏅", "🎖️",
-		"👍", "👎", "👌", "✌️", "🤞", "🤝", "👏", "🙌", "💪", "🤔",
-		"😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "😊",
-		"🧠", "💭", "💬", "🗨️", "🗯️", "💤", "💢", "💫", "🎵", "🎶",
-		"📚", "📖", "📕", "📗", "📘", "📙", "📓", "📒", "📃", "📜",
-		"🔗", "⛓️", "🧰", "🧲", "⚖️", "🔩", "⚙", "🗜️", "⚗️", "🧪",
-		"🐛", "🐞", "🦋", "🐌", "🐜", "🦗", "🕷️", "🦂", "🦟", "🪲",
+		"~@~X", "~0~_", "~Z~@", "~G~A", "~B~X", "~P~'", "~J~O~>", "~O~]", "~O~A", "~O~B",
+		"~E~U", "~N~T", "~J~O~'", "~G~[", "~V~V", "~G~Z", "~O~[", "~O~T", "~O~J", "~O~N",
+		"~G~^", "~O~@", "~G~_", "~W~B~>", "~W~C~>", "~W~D~>", "~O~K", "~O~L", "~O~M", "~V~W~>",
+		"~P~Q", "~W~]~>", "~P~R", "~P~S", "~W~[~>", "~J~O~T", "~J~O~X", "~J~O~W", "~P~^", "~W~U~>",
+		"~J~G", "~P~U", "~G~U", "~E~V~>", "~N~W~>", "~W~O", "~J~K", "~W~H", "~H~\\~>", "~W~I",
+		"~V~I", "~V~J", "~V~K", "~V~L", "~V~P", "~W~G", "~W~J", "~W~K", "~V~E", "~V~N~>",
+		"~O~H", "~O~I", "~O~L", "~O~A", "~O~F", "~O~E", "~W~Y", "~O~X", "~W~F", "~V~@",
+		"~W~P", "~W~Q", "~W~R", "~W~S", "~W~T", "~W~E", "~W~C", "~W~D", "~W~A", "~V~D",
+		"~P~P", "~P~Q", "~P~U", "~P~V", "~P~W", "~P~X", "~P~T", "~P~S", "~P~C", "~P~\\",
+		"~P~Z", "~P~V", "~P~W", "~P~X", "~P~Y", "~P~[", "~P~T", "~P~R", "~P~\\", "~P~^",
+		"~P~J", "~J~O~U", "~W~P~P", "~W~Q~R", "~J~O~V", "~P~I", "~W~\\~>", "~J~O~Y", "~J~O~Z",
+		"~P~Y", "~P~Z", "~W~]", "~U~[", "~W~^", "~P~_", "~W~_", "~V~B", "~V~C", "~P~]",
 	}
 
 	result := text
