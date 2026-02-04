@@ -262,3 +262,111 @@ func TestImageIndicators(t *testing.T) {
 		t.Errorf("indicators[1] = %q, want %q", indicators[1], "[image: https://example.com/image.jpg]")
 	}
 }
+
+func TestDetectMediaType(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		expected string
+	}{
+		{
+			name: "PNG",
+			data: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A},
+			expected: "image/png",
+		},
+		{
+			name: "JPEG",
+			data: []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46},
+			expected: "image/jpeg",
+		},
+		{
+			name: "GIF",
+			data: []byte{0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x00, 0x00},
+			expected: "image/gif",
+		},
+		{
+			name: "WebP",
+			data: []byte{0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50},
+			expected: "image/webp",
+		},
+		{
+			name: "unknown format",
+			data: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			expected: "",
+		},
+		{
+			name: "too short",
+			data: []byte{0x89, 0x50},
+			expected: "",
+		},
+		{
+			name: "empty",
+			data: []byte{},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := detectMediaType(tt.data)
+			if result != tt.expected {
+				t.Errorf("detectMediaType() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNewFromBytes(t *testing.T) {
+	// Valid PNG data (minimal header)
+	pngData := []byte{
+		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE,
+	}
+
+	t.Run("valid PNG", func(t *testing.T) {
+		img, err := NewFromBytes(pngData, "Pasted Image #1")
+		if err != nil {
+			t.Fatalf("NewFromBytes() error = %v", err)
+		}
+		if img.IsURL {
+			t.Error("Expected IsURL to be false")
+		}
+		if img.MediaType != "image/png" {
+			t.Errorf("MediaType = %q, want %q", img.MediaType, "image/png")
+		}
+		if img.Data == "" {
+			t.Error("Expected Data to be non-empty (base64 encoded)")
+		}
+		if img.OrigPath != "Pasted Image #1" {
+			t.Errorf("OrigPath = %q, want %q", img.OrigPath, "Pasted Image #1")
+		}
+	})
+
+	t.Run("valid JPEG", func(t *testing.T) {
+		jpegData := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46}
+		img, err := NewFromBytes(jpegData, "Pasted Image #2")
+		if err != nil {
+			t.Fatalf("NewFromBytes() error = %v", err)
+		}
+		if img.MediaType != "image/jpeg" {
+			t.Errorf("MediaType = %q, want %q", img.MediaType, "image/jpeg")
+		}
+	})
+
+	t.Run("empty data", func(t *testing.T) {
+		_, err := NewFromBytes([]byte{}, "Empty")
+		if err == nil {
+			t.Error("Expected error for empty data")
+		}
+	})
+
+	t.Run("unsupported format", func(t *testing.T) {
+		badData := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+		_, err := NewFromBytes(badData, "Unknown")
+		if err == nil {
+			t.Error("Expected error for unsupported format")
+		}
+	})
+}

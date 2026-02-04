@@ -61,12 +61,13 @@ type AgentInterface interface {
 type AgentFactory func(apiKey string) (AgentInterface, error)
 
 type Model struct {
-	header     *components.Header
-	chat       *components.ChatView
-	input      *components.InputArea
-	status     *components.StatusBar
-	history    *history.Manager
-	loginModal *components.LoginModal
+	header         *components.Header
+	chat           *components.ChatView
+	input          *components.InputArea
+	status         *components.StatusBar
+	history        *history.Manager
+	loginModal     *components.LoginModal
+	imageIndicator *components.ImageIndicator
 
 	agent        AgentInterface
 	agentFactory AgentFactory
@@ -87,16 +88,17 @@ func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin
 	historyMgr, _ := history.NewManager()
 
 	return Model{
-		header:       components.NewHeader(cfg.App.Name, Version, model),
-		chat:         components.NewChatView(cfg.App.Name),
-		input:        components.NewInputArea("Type your message..."),
-		status:       components.NewStatusBar(cfg.App.Name, Version, model),
-		loginModal:   components.NewLoginModal(),
-		history:      historyMgr,
-		agent:        ag,
-		agentFactory: factory,
-		config:       cfg,
-		showLogin:    needsLogin,
+		header:         components.NewHeader(cfg.App.Name, Version, model),
+		chat:           components.NewChatView(cfg.App.Name),
+		input:          components.NewInputArea("Type your message..."),
+		status:         components.NewStatusBar(cfg.App.Name, Version, model),
+		loginModal:     components.NewLoginModal(),
+		imageIndicator: components.NewImageIndicator(),
+		history:        historyMgr,
+		agent:          ag,
+		agentFactory:   factory,
+		config:         cfg,
+		showLogin:      needsLogin,
 	}
 }
 

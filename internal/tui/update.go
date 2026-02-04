@@ -2,12 +2,15 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"jarvis/internal/auth"
+	"jarvis/internal/clipboard"
+	"jarvis/internal/image"
 	"jarvis/internal/tui/components"
 	"jarvis/internal/util"
 
@@ -87,6 +90,12 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
 
+	case tea.KeyCtrlV:
+		if !m.loading {
+			return m.handlePaste()
+		}
+		return m, nil
+
 	case tea.KeyEsc:
 		if m.loading {
 			if cancel := getCurrentCancel(); cancel != nil {
@@ -106,6 +115,15 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyUp:
+		// If images exist and input empty, select images
+		if !m.loading && m.imageIndicator.HasImages() && m.input.Value() == "" {
+			if m.imageIndicator.IsSelected() {
+				m.imageIndicator.SelectPrev()
+			} else {
+				m.imageIndicator.SelectLast()
+			}
+			return m, nil
+		}
 		// Navigate to previous history entry
 		if !m.loading && m.history != nil {
 			// Store current input if we're starting navigation
@@ -119,6 +137,11 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyDown:
+		// Deselect image if selected
+		if m.imageIndicator.IsSelected() {
+			m.imageIndicator.SelectNext()
+			return m, nil
+		}
 		// Navigate to next history entry
 		if !m.loading && m.history != nil {
 			if next, ok := m.history.Next(); ok {
@@ -132,6 +155,14 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case tea.KeyBackspace, tea.KeyDelete:
+		// Remove selected image
+		if m.imageIndicator.IsSelected() {
+			m.imageIndicator.RemoveSelected()
+			return m, nil
+		}
+		// Fall through to let textarea handle it
 
 	case tea.KeyEnter:
 		if m.loading {
@@ -271,9 +302,33 @@ func (m Model) handleStreamChunk(msg StreamChunkMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handlePaste() (tea.Model, tea.Cmd) {
+	data, err := clipboard.ReadImage()
+	if err != nil {
+		m.status.SetStatus("Clipboard error: " + err.Error())
+		return m, nil
+	}
+	if data == nil {
+		m.status.SetStatus("No image in clipboard")
+		return m, nil
+	}
+
+	img, err := image.NewFromBytes(data, fmt.Sprintf("Pasted Image #%d", m.imageIndicator.Count()+1))
+	if err != nil {
+		m.status.SetStatus("Invalid image: " + err.Error())
+		return m, nil
+	}
+
+	m.imageIndicator.AddImage(img)
+	m.status.SetStatus("")
+	return m, nil
+}
+
 func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	input := strings.TrimSpace(m.input.Value())
-	if input == "" {
+
+	// Allow submission with just images (no text required)
+	if input == "" && !m.imageIndicator.HasImages() {
 		return m, nil
 	}
 
@@ -300,6 +355,7 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	if lowercaseInput == "/clear" || lowercaseInput == "clear" {
 		m.input.Reset()
 		m.chat.ClearMessages()
+		m.imageIndicator.Clear()
 		if m.history != nil {
 			m.history.Clear()
 		}
@@ -312,18 +368,56 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Add to history
-	if m.history != nil {
+	// Parse input for image references
+	parsed := image.ParseInput(input)
+
+	// Show errors for failed image loads
+	if parsed.HasErrors() {
+		for _, errMsg := range parsed.Errors {
+			m.chat.AddMessage(components.ChatMessage{
+				Role:      components.RoleSystem,
+				Content:   "Image error: " + errMsg,
+				Timestamp: time.Now(),
+			})
+		}
+	}
+
+	// Combine pasted images with @referenced images
+	pastedImages := m.imageIndicator.Images()
+	allImages := append(pastedImages, parsed.Images...)
+
+	// Add to history (original input with @references)
+	if m.history != nil && input != "" {
 		m.history.Add(input)
 		m.history.ResetIndex()
 	}
 	m.currentInput = ""
 
+	// Build display content with image indicators
+	displayContent := parsed.Text
+	if len(allImages) > 0 {
+		var indicators []string
+		// Add pasted image indicators
+		for i := range pastedImages {
+			indicators = append(indicators, fmt.Sprintf("[Pasted Image #%d]", i+1))
+		}
+		// Add @referenced image indicators
+		indicators = append(indicators, parsed.ImageIndicators()...)
+
+		if displayContent != "" {
+			displayContent += "\n"
+		}
+		displayContent += strings.Join(indicators, " ")
+	}
+
 	m.chat.AddMessage(components.ChatMessage{
 		Role:      components.RoleUser,
-		Content:   input,
+		Content:   displayContent,
 		Timestamp: time.Now(),
 	})
+
+	// Clear pasted images after submit
+	m.imageIndicator.Clear()
 
 	m.input.Reset()
 	m.loading = true
@@ -337,7 +431,12 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
 	setCurrentCancel(cancel)
 
-	return m, tea.Batch(m.sendToAgent(ctx, input), m.status.SpinnerTick())
+	// Use sendToAgentWithImages if we have images, otherwise use sendToAgent
+	if len(allImages) > 0 {
+		combinedParsed := &image.ParsedInput{Text: parsed.Text, Images: allImages}
+		return m, tea.Batch(m.sendToAgentWithImages(ctx, combinedParsed), m.status.SpinnerTick())
+	}
+	return m, tea.Batch(m.sendToAgent(ctx, parsed.Text), m.status.SpinnerTick())
 }
 
 func (m Model) sendToAgent(ctx context.Context, input string) tea.Cmd {
@@ -350,6 +449,28 @@ func (m Model) sendToAgent(ctx context.Context, input string) tea.Cmd {
 		}
 
 		err := agent.SendMessage(ctx, input, callback)
+		if err != nil {
+			// Check if it was cancelled
+			if ctx.Err() == context.Canceled {
+				return nil // Don't send error for cancellation
+			}
+			return ErrorMsg{Err: err}
+		}
+
+		return ResponseMsg{}
+	}
+}
+
+func (m Model) sendToAgentWithImages(ctx context.Context, parsed *image.ParsedInput) tea.Cmd {
+	agent := m.agent
+	return func() tea.Msg {
+		callback := func(msg any) {
+			if p := getProgram(); p != nil {
+				p.Send(msg)
+			}
+		}
+
+		err := agent.SendMessageWithImages(ctx, parsed.Text, parsed.Images, callback)
 		if err != nil {
 			// Check if it was cancelled
 			if ctx.Err() == context.Canceled {

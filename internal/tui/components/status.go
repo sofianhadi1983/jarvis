@@ -75,7 +75,7 @@ func (s *StatusBar) View() string {
 		spinnerView := s.spinner.View()
 		leftContent = fmt.Sprintf("%s %s", spinnerView, s.status)
 	} else {
-		leftContent = "Press / for commands or @ for files"
+		leftContent = "@ for images | Ctrl+V to paste"
 	}
 	left := helpStyle.Render(leftContent)
 
