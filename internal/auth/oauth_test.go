@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"crypto/sha256"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -11,22 +13,96 @@ func TestGenerateOAuthState(t *testing.T) {
 		t.Fatalf("GenerateOAuthState failed: %v", err)
 	}
 
-	if state.CodeVerifier != CodeVerifier {
-		t.Errorf("CodeVerifier should be '%s', got '%s'", CodeVerifier, state.CodeVerifier)
+	if len(state.CodeVerifier) < 43 || len(state.CodeVerifier) > 128 {
+		t.Errorf("CodeVerifier length %d outside RFC 7636 range [43, 128]", len(state.CodeVerifier))
 	}
-	if state.State != CodeVerifier {
-		t.Errorf("State should equal CodeVerifier '%s', got '%s'", CodeVerifier, state.State)
+
+	if state.CodeChallenge == "" {
+		t.Error("CodeChallenge should not be empty")
+	}
+
+	if state.State == state.CodeVerifier {
+		t.Error("State should not equal CodeVerifier")
+	}
+
+	hash := sha256.Sum256([]byte(state.CodeVerifier))
+	expectedChallenge := base64URLEncode(hash[:])
+	if state.CodeChallenge != expectedChallenge {
+		t.Errorf("CodeChallenge mismatch.\nExpected: %s\nGot: %s", expectedChallenge, state.CodeChallenge)
+	}
+}
+
+func TestGenerateOAuthStateUniqueness(t *testing.T) {
+	state1, err := GenerateOAuthState()
+	if err != nil {
+		t.Fatalf("first GenerateOAuthState failed: %v", err)
+	}
+
+	state2, err := GenerateOAuthState()
+	if err != nil {
+		t.Fatalf("second GenerateOAuthState failed: %v", err)
+	}
+
+	if state1.CodeVerifier == state2.CodeVerifier {
+		t.Error("two calls produced the same CodeVerifier")
+	}
+	if state1.State == state2.State {
+		t.Error("two calls produced the same State")
 	}
 }
 
 func TestBuildAuthorizationURL(t *testing.T) {
 	state, _ := GenerateOAuthState()
-	url := BuildAuthorizationURL(state)
+	rawURL := BuildAuthorizationURL(state)
 
-	expectedURL := "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference&code_challenge=OD6HWMArsI00iHxSQ1ioc7Dwxt0OSUdxVui0MpUBRiQ&code_challenge_method=S256&state=Iw-Y0UgiIxn7p2wr3qaDIRaDYBGo21I9EvDW-Cr2lg2lfs2zftOyQL1PWNOpDb8-M3Jm2xflSfvqO5WIhDB5qw"
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("failed to parse URL: %v", err)
+	}
 
-	if url != expectedURL {
-		t.Errorf("URL mismatch.\nExpected: %s\nGot: %s", expectedURL, url)
+	if parsed.Scheme != "https" {
+		t.Errorf("expected scheme https, got %s", parsed.Scheme)
+	}
+	if parsed.Host != "claude.ai" {
+		t.Errorf("expected host claude.ai, got %s", parsed.Host)
+	}
+	if parsed.Path != "/oauth/authorize" {
+		t.Errorf("expected path /oauth/authorize, got %s", parsed.Path)
+	}
+
+	params := parsed.Query()
+
+	expectedParams := map[string]string{
+		"code":                  "true",
+		"client_id":            ClientID,
+		"response_type":        "code",
+		"redirect_uri":         RedirectURI,
+		"scope":                OAuthScopes,
+		"code_challenge":       state.CodeChallenge,
+		"code_challenge_method": "S256",
+		"state":                state.State,
+	}
+
+	for key, expected := range expectedParams {
+		got := params.Get(key)
+		if got != expected {
+			t.Errorf("param %s: expected %q, got %q", key, expected, got)
+		}
+	}
+}
+
+func TestExchangeCodeForTokensStateValidation(t *testing.T) {
+	state, err := GenerateOAuthState()
+	if err != nil {
+		t.Fatalf("GenerateOAuthState failed: %v", err)
+	}
+
+	_, err = ExchangeCodeForTokens("somecode", "wrong-state", state)
+	if err == nil {
+		t.Fatal("expected error for mismatched state")
+	}
+	if !strings.Contains(err.Error(), "state mismatch") {
+		t.Errorf("expected state mismatch error, got: %v", err)
 	}
 }
 

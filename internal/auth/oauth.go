@@ -1,28 +1,29 @@
-// Package auth provides OAuth authentication functionality for Anthropic services.
 package auth
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"runtime"
 	"strings"
 )
 
-// OAuth constants for Anthropic API
 const (
 	ClientID     = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	RedirectURI  = "https://console.anthropic.com/oauth/code/callback"
 	TokenURL     = "https://console.anthropic.com/v1/oauth/token"
-	CodeVerifier = "Iw-Y0UgiIxn7p2wr3qaDIRaDYBGo21I9EvDW-Cr2lg2lfs2zftOyQL1PWNOpDb8-M3Jm2xflSfvqO5WIhDB5qw"
+	AuthorizeURL = "https://claude.ai/oauth/authorize"
+	OAuthScopes  = "org:create_api_key user:profile user:inference"
 )
 
-// TokenResponse represents the response from the OAuth token endpoint.
 type TokenResponse struct {
 	TokenType    string `json:"token_type"`
 	AccessToken  string `json:"access_token"`
@@ -39,34 +40,61 @@ type TokenResponse struct {
 	} `json:"account"`
 }
 
-// OAuthState holds the PKCE code verifier and state parameter.
 type OAuthState struct {
-	CodeVerifier string
-	State        string
+	CodeVerifier  string
+	CodeChallenge string
+	State         string
 }
 
-// GenerateOAuthState creates OAuthState with the fixed PKCE values.
 func GenerateOAuthState() (*OAuthState, error) {
+	verifierBytes := make([]byte, 64)
+	if _, err := rand.Read(verifierBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate code verifier: %w", err)
+	}
+	codeVerifier := base64URLEncode(verifierBytes)
+
+	hash := sha256.Sum256([]byte(codeVerifier))
+	codeChallenge := base64URLEncode(hash[:])
+
+	stateBytes := make([]byte, 32)
+	if _, err := rand.Read(stateBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate state: %w", err)
+	}
+	state := base64URLEncode(stateBytes)
+
 	return &OAuthState{
-		CodeVerifier: CodeVerifier,
-		State:        CodeVerifier,
+		CodeVerifier:  codeVerifier,
+		CodeChallenge: codeChallenge,
+		State:         state,
 	}, nil
 }
 
-// BuildAuthorizationURL returns the exact authorization URL.
 func BuildAuthorizationURL(oauthState *OAuthState) string {
-	return "https://claude.ai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fconsole.anthropic.com%2Foauth%2Fcode%2Fcallback&scope=org%3Acreate_api_key+user%3Aprofile+user%3Ainference&code_challenge=OD6HWMArsI00iHxSQ1ioc7Dwxt0OSUdxVui0MpUBRiQ&code_challenge_method=S256&state=Iw-Y0UgiIxn7p2wr3qaDIRaDYBGo21I9EvDW-Cr2lg2lfs2zftOyQL1PWNOpDb8-M3Jm2xflSfvqO5WIhDB5qw"
+	params := url.Values{}
+	params.Set("code", "true")
+	params.Set("client_id", ClientID)
+	params.Set("response_type", "code")
+	params.Set("redirect_uri", RedirectURI)
+	params.Set("scope", OAuthScopes)
+	params.Set("code_challenge", oauthState.CodeChallenge)
+	params.Set("code_challenge_method", "S256")
+	params.Set("state", oauthState.State)
+
+	return AuthorizeURL + "?" + params.Encode()
 }
 
-// ExchangeCodeForTokens exchanges the authorization code for access and refresh tokens.
 func ExchangeCodeForTokens(code, state string, oauthState *OAuthState) (*TokenResponse, error) {
+	if state != oauthState.State {
+		return nil, errors.New("state mismatch: possible CSRF attack")
+	}
+
 	reqBody := map[string]string{
 		"code":          code,
 		"state":         state,
 		"grant_type":    "authorization_code",
 		"client_id":     ClientID,
 		"redirect_uri":  RedirectURI,
-		"code_verifier": CodeVerifier,
+		"code_verifier": oauthState.CodeVerifier,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -108,7 +136,6 @@ func ExchangeCodeForTokens(code, state string, oauthState *OAuthState) (*TokenRe
 	return &tokenResp, nil
 }
 
-// RefreshAccessToken uses the refresh token to obtain a new access token.
 func RefreshAccessToken(refreshToken string) (*TokenResponse, error) {
 	reqBody := map[string]string{
 		"grant_type":    "refresh_token",
@@ -155,7 +182,6 @@ func RefreshAccessToken(refreshToken string) (*TokenResponse, error) {
 	return &tokenResp, nil
 }
 
-// ParseAuthCode parses authentication code in "code#state" format.
 func ParseAuthCode(input string) (code, state string, err error) {
 	input = strings.TrimSpace(input)
 
@@ -171,7 +197,6 @@ func ParseAuthCode(input string) (code, state string, err error) {
 	return parts[0], parts[1], nil
 }
 
-// OpenBrowser opens the specified URL in the default browser.
 func OpenBrowser(url string) error {
 	var cmd *exec.Cmd
 
@@ -189,7 +214,6 @@ func OpenBrowser(url string) error {
 	return cmd.Start()
 }
 
-// base64URLEncode encodes bytes to base64url format without padding.
 func base64URLEncode(data []byte) string {
 	return base64.RawURLEncoding.EncodeToString(data)
 }
