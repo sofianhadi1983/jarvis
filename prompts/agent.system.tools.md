@@ -35,3 +35,14 @@ Track tasks for complex multi-step work. Send the COMPLETE list each time (not d
 - Max 20 items, only 1 can be `in_progress` at a time
 - Use this when a task has 3+ steps to track what's done and what's left
 - Update the list as you complete steps or discover new sub-tasks
+
+### Task
+Spawn a subagent with isolated context for a focused subtask.
+- Input: `description` (3-5 words), `prompt` (detailed instructions), `agent_type`
+- Agent types:
+  - `explore` - Read-only search and analysis (Read, ListFiles, Bash)
+  - `code` - Full implementation access (Read, ListFiles, Update, Bash, Fetch)
+  - `plan` - Design strategies without modifying files (Read, ListFiles, Bash)
+- The subagent gets a fresh context (no access to your conversation history)
+- Only the subagent's final text response is returned to you
+- Use this to keep your context clean when exploring large codebases or delegating implementation

@@ -9,6 +9,7 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/image"
 	"jarvis/internal/registry"
+	"jarvis/internal/subagent"
 	"jarvis/internal/todo"
 	"jarvis/internal/types"
 	"jarvis/pkg/tools"
@@ -18,14 +19,16 @@ import (
 )
 
 type Agent struct {
-	client             anthropic.Client
-	registry           *registry.Registry
-	config             *config.Config
-	conversation       []anthropic.BetaMessageParam
-	systemPrompt       string
-	todoManager        *todo.Manager
-	roundsWithoutTodo  int
-	callback           func(msg any)
+	client            anthropic.Client
+	registry          *registry.Registry
+	config            *config.Config
+	conversation      []anthropic.BetaMessageParam
+	systemPrompt      string
+	todoManager       *todo.Manager
+	roundsWithoutTodo int
+	callback          func(msg any)
+	ctx               context.Context
+	maxRounds         int
 }
 
 func NewAgent(client anthropic.Client, reg *registry.Registry, cfg *config.Config) (*Agent, error) {
@@ -61,7 +64,35 @@ func NewAgent(client anthropic.Client, reg *registry.Registry, cfg *config.Confi
 		},
 	})
 
+	reg.RegisterOrReplace(tools.ToolDefinition{
+		Name: "Task",
+		Description: "Spawn a subagent to handle a focused subtask with isolated context. " +
+			"Use for exploration, code changes, or planning that would pollute your context.",
+		InputSchema: tools.GenerateSchema[subagent.TaskInput](),
+		Function: func(input json.RawMessage) (string, error) {
+			var params subagent.TaskInput
+			if err := json.Unmarshal(input, &params); err != nil {
+				return "", fmt.Errorf("invalid input: %w", err)
+			}
+			return subagent.RunTask(a.ctx, a.registry, params, a.callback,
+				func(reg *registry.Registry, sysPrompt string) subagent.MessageSender {
+					return NewChildAgent(a.client, reg, sysPrompt)
+				})
+		},
+	})
+
 	return a, nil
+}
+
+func NewChildAgent(client anthropic.Client, reg *registry.Registry, systemPrompt string) *Agent {
+	return &Agent{
+		client:       client,
+		registry:     reg,
+		conversation: []anthropic.BetaMessageParam{},
+		systemPrompt: systemPrompt,
+		todoManager:  todo.NewManager(nil),
+		maxRounds:    30,
+	}
 }
 
 func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg any)) error {
@@ -111,8 +142,10 @@ func (a *Agent) SendMessageWithImages(ctx context.Context, text string, images [
 // processConversation handles the inference loop for both text-only and image messages.
 func (a *Agent) processConversation(ctx context.Context, callback func(msg any)) error {
 	a.callback = callback
-	defer func() { a.callback = nil }()
+	a.ctx = ctx
+	defer func() { a.callback = nil; a.ctx = nil }()
 
+	rounds := 0
 	for {
 		textContent, toolBlocks, err := a.runInferenceWithStreaming(ctx, callback)
 		if err != nil {
@@ -181,6 +214,13 @@ func (a *Agent) processConversation(ctx context.Context, callback func(msg any))
 		}
 
 		a.conversation = append(a.conversation, anthropic.NewBetaUserMessage(toolResults...))
+
+		if a.maxRounds > 0 {
+			rounds++
+			if rounds >= a.maxRounds {
+				return fmt.Errorf("subagent reached max tool rounds (%d)", a.maxRounds)
+			}
+		}
 	}
 }
 
