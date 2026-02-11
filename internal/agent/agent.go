@@ -9,18 +9,23 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/image"
 	"jarvis/internal/registry"
+	"jarvis/internal/todo"
 	"jarvis/internal/types"
+	"jarvis/pkg/tools"
 
 	"github.com/sofianhadi1983/anthropic-sdk-go"
 	"github.com/sofianhadi1983/anthropic-sdk-go/shared/constant"
 )
 
 type Agent struct {
-	client       anthropic.Client
-	registry     *registry.Registry
-	config       *config.Config
-	conversation []anthropic.BetaMessageParam
-	systemPrompt string
+	client             anthropic.Client
+	registry           *registry.Registry
+	config             *config.Config
+	conversation       []anthropic.BetaMessageParam
+	systemPrompt       string
+	todoManager        *todo.Manager
+	roundsWithoutTodo  int
+	callback           func(msg any)
 }
 
 func NewAgent(client anthropic.Client, reg *registry.Registry, cfg *config.Config) (*Agent, error) {
@@ -29,13 +34,34 @@ func NewAgent(client anthropic.Client, reg *registry.Registry, cfg *config.Confi
 		return nil, fmt.Errorf("failed to load system prompt: %w", err)
 	}
 
-	return &Agent{
+	a := &Agent{
 		client:       client,
 		registry:     reg,
 		config:       cfg,
 		conversation: []anthropic.BetaMessageParam{},
 		systemPrompt: systemPrompt,
-	}, nil
+	}
+
+	a.todoManager = todo.NewManager(func(activeForm string) {
+		if a.callback != nil {
+			a.callback(types.TodoUpdateMsg{ActiveForm: activeForm})
+		}
+	})
+
+	reg.RegisterOrReplace(tools.ToolDefinition{
+		Name:        "TodoWrite",
+		Description: "Track tasks for complex multi-step work. Send the COMPLETE todo list each time (not diffs). Max 20 items, only 1 in_progress at a time.",
+		InputSchema: tools.GenerateSchema[todo.TodoWriteInput](),
+		Function: func(input json.RawMessage) (string, error) {
+			var params todo.TodoWriteInput
+			if err := json.Unmarshal(input, &params); err != nil {
+				return "", fmt.Errorf("invalid input: %w", err)
+			}
+			return a.todoManager.Replace(params.Todos)
+		},
+	})
+
+	return a, nil
 }
 
 func (a *Agent) SendMessage(ctx context.Context, input string, callback func(msg any)) error {
@@ -84,6 +110,9 @@ func (a *Agent) SendMessageWithImages(ctx context.Context, text string, images [
 
 // processConversation handles the inference loop for both text-only and image messages.
 func (a *Agent) processConversation(ctx context.Context, callback func(msg any)) error {
+	a.callback = callback
+	defer func() { a.callback = nil }()
+
 	for {
 		textContent, toolBlocks, err := a.runInferenceWithStreaming(ctx, callback)
 		if err != nil {
@@ -100,6 +129,7 @@ func (a *Agent) processConversation(ctx context.Context, callback func(msg any))
 		}
 
 		toolResults := []anthropic.BetaContentBlockParamUnion{}
+		todoUsedThisRound := false
 
 		for _, tb := range toolBlocks {
 			validInput := ensureValidJSON(tb.inputJSON)
@@ -110,6 +140,10 @@ func (a *Agent) processConversation(ctx context.Context, callback func(msg any))
 
 			result, isError := a.executeTool(tb.id, tb.name, json.RawMessage(validInput))
 			toolResults = append(toolResults, a.newBetaToolResult(tb.id, result, isError))
+
+			if tb.name == "TodoWrite" {
+				todoUsedThisRound = true
+			}
 
 			var diffInfo *types.DiffInfo
 			if tb.name == "Update" {
@@ -124,6 +158,12 @@ func (a *Agent) processConversation(ctx context.Context, callback func(msg any))
 			})
 		}
 
+		if todoUsedThisRound {
+			a.roundsWithoutTodo = 0
+		} else if len(toolBlocks) > 0 {
+			a.roundsWithoutTodo++
+		}
+
 		a.conversation = append(a.conversation, anthropic.BetaMessageParam{
 			Role:    anthropic.BetaMessageParamRoleAssistant,
 			Content: assistantContent,
@@ -131,6 +171,13 @@ func (a *Agent) processConversation(ctx context.Context, callback func(msg any))
 
 		if len(toolResults) == 0 {
 			return nil
+		}
+
+		// Nag reminder if TodoWrite hasn't been used for a while
+		if a.roundsWithoutTodo >= 10 && a.todoManager.HasItems() {
+			nag := anthropic.NewBetaTextBlock("[Reminder: Update your todo list with TodoWrite to track progress.]")
+			toolResults = append([]anthropic.BetaContentBlockParamUnion{nag}, toolResults...)
+			a.roundsWithoutTodo = 0
 		}
 
 		a.conversation = append(a.conversation, anthropic.NewBetaUserMessage(toolResults...))
@@ -271,6 +318,8 @@ func (a *Agent) newBetaToolResult(toolUseID, content string, isError bool) anthr
 
 func (a *Agent) ClearHistory() {
 	a.conversation = []anthropic.BetaMessageParam{}
+	a.todoManager.Reset()
+	a.roundsWithoutTodo = 0
 }
 
 func extractDiffInfo(result string) *types.DiffInfo {

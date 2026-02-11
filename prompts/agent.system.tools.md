@@ -26,3 +26,12 @@ Fetch content from web URLs with text extraction.
 - Input: `url`, `description` (optional), `timeout` (optional)
 - Automatically extracts readable text from HTML
 - Respects domain restrictions if configured
+
+### TodoWrite
+Track tasks for complex multi-step work. Send the COMPLETE list each time (not diffs).
+- Input: `todos` - array of items, each with `content`, `status`, and `activeForm`
+- Status values: `pending`, `in_progress`, `completed`
+- `activeForm`: present-tense text shown while working (e.g., "Reading files...")
+- Max 20 items, only 1 can be `in_progress` at a time
+- Use this when a task has 3+ steps to track what's done and what's left
+- Update the list as you complete steps or discover new sub-tasks

@@ -50,6 +50,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case TodoUpdateMsg:
+		if msg.ActiveForm != "" {
+			m.status.SetStatus(msg.ActiveForm)
+		}
+		if m.loading {
+			return m, m.status.SpinnerTick()
+		}
+		return m, nil
+
 	case ToolStartMsg:
 		m.status.SetStatus("Running " + msg.Name + "...")
 		if m.loading {

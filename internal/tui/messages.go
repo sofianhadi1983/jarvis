@@ -9,3 +9,4 @@ type ToolStartMsg = types.ToolStartMsg
 type ToolEndMsg = types.ToolEndMsg
 type ErrorMsg = types.ErrorMsg
 type AgentReadyMsg = types.AgentReadyMsg
+type TodoUpdateMsg = types.TodoUpdateMsg

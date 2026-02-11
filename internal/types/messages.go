@@ -55,3 +55,7 @@ type ErrorMsg struct {
 }
 
 type AgentReadyMsg struct{}
+
+type TodoUpdateMsg struct {
+	ActiveForm string
+}

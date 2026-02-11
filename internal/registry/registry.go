@@ -26,6 +26,10 @@ func (r *Registry) Register(def tools.ToolDefinition) error {
 	return nil
 }
 
+func (r *Registry) RegisterOrReplace(def tools.ToolDefinition) {
+	r.tools[def.Name] = def
+}
+
 func (r *Registry) Get(name string) (tools.ToolDefinition, bool) {
 	tool, found := r.tools[name]
 	return tool, found
