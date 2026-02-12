@@ -12,10 +12,12 @@ import (
 	"jarvis/internal/clipboard"
 	"jarvis/internal/image"
 	"jarvis/internal/references"
+	"jarvis/internal/styles"
 	"jarvis/internal/tui/components"
 	"jarvis/internal/util"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -499,6 +501,54 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 			Role:      components.RoleSystem,
 			Content:   "History and context cleared",
 			Timestamp: time.Now(),
+		})
+		return m, nil
+	}
+
+	if lowercaseInput == "/mcp" {
+		m.input.Reset()
+		if m.mcpStatus == nil {
+			m.chat.AddMessage(components.ChatMessage{
+				Role: components.RoleSystem, Content: "No MCP servers configured.",
+				Timestamp: time.Now(),
+			})
+			return m, nil
+		}
+		statuses := m.mcpStatus.Status(context.Background())
+		if len(statuses) == 0 {
+			m.chat.AddMessage(components.ChatMessage{
+				Role: components.RoleSystem, Content: "No MCP servers configured.",
+				Timestamp: time.Now(),
+			})
+			return m, nil
+		}
+		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
+		greenStyle := lipgloss.NewStyle().Foreground(styles.ToolColor)
+		redStyle := lipgloss.NewStyle().Foreground(styles.ErrorColor)
+
+		var sb strings.Builder
+		sb.WriteString(dimStyle.Render("MCP Server Status") + "\n")
+		for _, s := range statuses {
+			var statusLabel string
+			if s.Connected {
+				statusLabel = greenStyle.Render("connected")
+			} else {
+				statusLabel = redStyle.Render("failed")
+			}
+			sb.WriteString(fmt.Sprintf("\n  %s (%s)\n", dimStyle.Render(s.Name), statusLabel))
+			sb.WriteString(dimStyle.Render(fmt.Sprintf("    Command: %s", s.Command)) + "\n")
+			if s.Connected && len(s.Tools) > 0 {
+				sb.WriteString(dimStyle.Render(fmt.Sprintf("    Tools (%d):", len(s.Tools))) + "\n")
+				for _, t := range s.Tools {
+					sb.WriteString(dimStyle.Render(fmt.Sprintf("      - %s", t)) + "\n")
+				}
+			} else if s.Connected {
+				sb.WriteString(dimStyle.Render("    Tools: none") + "\n")
+			}
+		}
+		m.chat.AddMessage(components.ChatMessage{
+			Role: components.RoleSystem, Content: sb.String(),
+			PreRendered: true, Timestamp: time.Now(),
 		})
 		return m, nil
 	}

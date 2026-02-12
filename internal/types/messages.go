@@ -83,3 +83,10 @@ type ParallelGroupDoneMsg struct {
 type SkillLoadedMsg struct {
 	Name string
 }
+
+type MCPServerStatus struct {
+	Name      string
+	Command   string
+	Connected bool
+	Tools     []string
+}

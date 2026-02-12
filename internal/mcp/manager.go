@@ -7,8 +7,10 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strings"
 
 	"jarvis/internal/config"
+	"jarvis/internal/types"
 	"jarvis/pkg/tools"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -118,6 +120,29 @@ func (m *Manager) bridgeTool(serverName string, session *mcp.ClientSession, tool
 			return ExtractToolResult(result)
 		},
 	}
+}
+
+// Status returns the connection status and available tools for each configured MCP server.
+func (m *Manager) Status(ctx context.Context) []types.MCPServerStatus {
+	var statuses []types.MCPServerStatus
+	for name, cfg := range m.configs {
+		s := types.MCPServerStatus{
+			Name:    name,
+			Command: cfg.Command + " " + strings.Join(cfg.Args, " "),
+		}
+		session, ok := m.sessions[name]
+		if ok {
+			s.Connected = true
+			result, err := session.ListTools(ctx, nil)
+			if err == nil {
+				for _, tool := range result.Tools {
+					s.Tools = append(s.Tools, tool.Name)
+				}
+			}
+		}
+		statuses = append(statuses, s)
+	}
+	return statuses
 }
 
 // Close gracefully shuts down all MCP server sessions.

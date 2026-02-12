@@ -33,6 +33,8 @@ type ChatMessage struct {
 	Timestamp time.Time
 	Diff      *types.DiffInfo
 
+	PreRendered bool // if true, Content is already styled—skip default coloring
+
 	// Parallel group fields
 	ParallelTaskNames  []string
 	ParallelAgentTypes []string
@@ -207,7 +209,11 @@ func (c *ChatView) renderMessages() string {
 
 		case RoleSystem:
 			sb.WriteString(bulletStyle.Render("* "))
-			sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(msg.Content))
+			if msg.PreRendered {
+				sb.WriteString(msg.Content)
+			} else {
+				sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(msg.Content))
+			}
 			sb.WriteString("\n\n")
 		}
 	}

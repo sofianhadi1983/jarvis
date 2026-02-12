@@ -50,8 +50,9 @@ func main() {
 	registerTools(reg)
 
 	// Initialize MCP servers if configured
+	var mcpManager *mcpclient.Manager
 	if len(cfg.MCP.Servers) > 0 {
-		mcpManager := mcpclient.NewManager(cfg.MCP.Servers)
+		mcpManager = mcpclient.NewManager(cfg.MCP.Servers)
 		ctx := context.Background()
 		if err := mcpManager.Connect(ctx); err != nil {
 			log.Printf("Warning: MCP connection error: %v", err)
@@ -118,7 +119,11 @@ func main() {
 		}
 	}
 
-	model := tui.New(ag, agentFactory, cfg, needsLogin, skillLoader)
+	var mcpProvider tui.MCPStatusProvider
+	if mcpManager != nil {
+		mcpProvider = mcpManager
+	}
+	model := tui.New(ag, agentFactory, cfg, needsLogin, skillLoader, mcpProvider)
 
 	p := tea.NewProgram(
 		model,

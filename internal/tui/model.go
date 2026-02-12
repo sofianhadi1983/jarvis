@@ -9,6 +9,7 @@ import (
 	"jarvis/internal/image"
 	"jarvis/internal/skills"
 	"jarvis/internal/tui/components"
+	"jarvis/internal/types"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -61,6 +62,10 @@ type AgentInterface interface {
 
 type AgentFactory func(apiKey string) (AgentInterface, error)
 
+type MCPStatusProvider interface {
+	Status(ctx context.Context) []types.MCPServerStatus
+}
+
 type Model struct {
 	header         *components.Header
 	chat           *components.ChatView
@@ -75,6 +80,7 @@ type Model struct {
 	agentFactory AgentFactory
 	config       *config.Config
 	skillLoader  *skills.SkillLoader
+	mcpStatus    MCPStatusProvider
 
 	parallelGroup *components.ParallelGroupState
 
@@ -87,7 +93,7 @@ type Model struct {
 	currentInput string
 }
 
-func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin bool, sl *skills.SkillLoader) Model {
+func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin bool, sl *skills.SkillLoader, msp MCPStatusProvider) Model {
 	model := cfg.Anthropic.Model
 
 	historyMgr, _ := history.NewManager()
@@ -105,6 +111,7 @@ func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin
 		agentFactory:   factory,
 		config:         cfg,
 		skillLoader:    sl,
+		mcpStatus:      msp,
 		showLogin:      needsLogin,
 	}
 }

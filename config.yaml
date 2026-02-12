@@ -12,3 +12,9 @@ app:
 
 ui:
   theme: "dark"
+
+mcp:
+  servers:
+    context7:
+      command: "npx"
+      args: ["-y", "@upstash/context7-mcp", "--api-key", "ctx7sk-d80bea88-38f5-4a24-bab7-5106761b6b78"]
