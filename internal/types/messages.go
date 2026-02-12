@@ -79,3 +79,7 @@ type ParallelAgentUpdateMsg struct {
 type ParallelGroupDoneMsg struct {
 	GroupID string
 }
+
+type SkillLoadedMsg struct {
+	Name string
+}

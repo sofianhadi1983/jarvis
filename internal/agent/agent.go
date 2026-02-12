@@ -10,6 +10,7 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/image"
 	"jarvis/internal/registry"
+	"jarvis/internal/skills"
 	"jarvis/internal/subagent"
 	"jarvis/internal/todo"
 	"jarvis/internal/types"
@@ -26,6 +27,7 @@ type Agent struct {
 	conversation      []anthropic.BetaMessageParam
 	systemPrompt      string
 	todoManager       *todo.Manager
+	skillLoader       *skills.SkillLoader
 	roundsWithoutTodo int
 	callback          func(msg any)
 	ctx               context.Context
@@ -82,7 +84,49 @@ func NewAgent(client anthropic.Client, reg *registry.Registry, cfg *config.Confi
 		},
 	})
 
+	// Skills system
+	skillLoader := skills.NewSkillLoader("skills")
+	a.skillLoader = skillLoader
+
+	if descs := skillLoader.GetDescriptions(); descs != "" {
+		a.systemPrompt += "\n\n<system-reminder>\nThe following skills are available for use with the Skill tool:\n" + descs + "\n"
+		if invocable := skillLoader.GetUserInvocableSkills(); len(invocable) > 0 {
+			slashCmds := make([]string, len(invocable))
+			for i, name := range invocable {
+				slashCmds[i] = "/" + name
+			}
+			a.systemPrompt += "\nUser-invocable skills (user types slash command): " + strings.Join(slashCmds, ", ") + "\n"
+		}
+		a.systemPrompt += "</system-reminder>"
+	}
+
+	type SkillInput struct {
+		Skill string `json:"skill" jsonschema_description:"Name of the skill to load"`
+		Args  string `json:"args,omitempty" jsonschema_description:"Optional arguments for the skill"`
+	}
+
+	reg.RegisterOrReplace(tools.ToolDefinition{
+		Name:        "Skill",
+		Description: "Load a skill to gain specialized knowledge. Available: " + skillLoader.GetDescriptions(),
+		InputSchema: tools.GenerateSchema[SkillInput](),
+		Function: func(input json.RawMessage) (string, error) {
+			var params SkillInput
+			if err := json.Unmarshal(input, &params); err != nil {
+				return "", fmt.Errorf("invalid input: %w", err)
+			}
+			content, err := skillLoader.GetSkillContent(params.Skill)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("<skill-loaded name=\"%s\">\n%s\n</skill-loaded>\n\nFollow the instructions above.", params.Skill, content), nil
+		},
+	})
+
 	return a, nil
+}
+
+func (a *Agent) GetSkillLoader() *skills.SkillLoader {
+	return a.skillLoader
 }
 
 func NewChildAgent(client anthropic.Client, reg *registry.Registry, systemPrompt string) *Agent {

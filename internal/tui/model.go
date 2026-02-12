@@ -7,6 +7,7 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/history"
 	"jarvis/internal/image"
+	"jarvis/internal/skills"
 	"jarvis/internal/tui/components"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -73,6 +74,7 @@ type Model struct {
 	agent        AgentInterface
 	agentFactory AgentFactory
 	config       *config.Config
+	skillLoader  *skills.SkillLoader
 
 	parallelGroup *components.ParallelGroupState
 
@@ -85,7 +87,7 @@ type Model struct {
 	currentInput string
 }
 
-func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin bool) Model {
+func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin bool, sl *skills.SkillLoader) Model {
 	model := cfg.Anthropic.Model
 
 	historyMgr, _ := history.NewManager()
@@ -102,6 +104,7 @@ func New(ag AgentInterface, factory AgentFactory, cfg *config.Config, needsLogin
 		agent:          ag,
 		agentFactory:   factory,
 		config:         cfg,
+		skillLoader:    sl,
 		showLogin:      needsLogin,
 	}
 }

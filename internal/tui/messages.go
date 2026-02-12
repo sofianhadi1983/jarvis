@@ -13,3 +13,4 @@ type TodoUpdateMsg = types.TodoUpdateMsg
 type ParallelGroupStartMsg = types.ParallelGroupStartMsg
 type ParallelAgentUpdateMsg = types.ParallelAgentUpdateMsg
 type ParallelGroupDoneMsg = types.ParallelGroupDoneMsg
+type SkillLoadedMsg = types.SkillLoadedMsg

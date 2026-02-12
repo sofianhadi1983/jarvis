@@ -104,6 +104,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case SkillLoadedMsg:
+		m.chat.AddMessage(components.ChatMessage{
+			Role:      components.RoleSystem,
+			Content:   "Skill loaded: " + msg.Name,
+			Timestamp: time.Now(),
+		})
+		if m.loading {
+			return m, m.status.SpinnerTick()
+		}
+		return m, nil
+
 	case ToolStartMsg:
 		m.status.SetStatus("Running " + msg.Name + "...")
 		if m.loading {
@@ -490,6 +501,66 @@ func (m Model) submitMessage() (tea.Model, tea.Cmd) {
 			Timestamp: time.Now(),
 		})
 		return m, nil
+	}
+
+	// Check for skill invocation: /skill-name [args]
+	if strings.HasPrefix(input, "/") && m.skillLoader != nil {
+		parts := strings.SplitN(input[1:], " ", 2)
+		skillName := parts[0]
+		if m.skillLoader.Has(skillName) {
+			skillArgs := ""
+			if len(parts) > 1 {
+				skillArgs = parts[1]
+			}
+
+			content, err := m.skillLoader.GetSkillContent(skillName)
+			if err != nil {
+				m.chat.AddMessage(components.ChatMessage{
+					Role:      components.RoleSystem,
+					Content:   "Failed to load skill: " + err.Error(),
+					Timestamp: time.Now(),
+				})
+				return m, nil
+			}
+
+			// Display user message
+			m.chat.AddMessage(components.ChatMessage{
+				Role:      components.RoleUser,
+				Content:   input,
+				Timestamp: time.Now(),
+			})
+
+			// Display skill loaded indicator
+			m.chat.AddMessage(components.ChatMessage{
+				Role:      components.RoleSystem,
+				Content:   "Skill loaded: " + skillName,
+				Timestamp: time.Now(),
+			})
+
+			// Build combined prompt: skill content + user args
+			prompt := fmt.Sprintf("<skill-loaded name=\"%s\">\n%s\n</skill-loaded>\n\nFollow the instructions above.", skillName, content)
+			if skillArgs != "" {
+				prompt += "\n\nUser request: " + skillArgs
+			}
+
+			if m.history != nil && input != "" {
+				m.history.Add(input)
+				m.history.ResetIndex()
+			}
+			m.currentInput = ""
+
+			m.input.Reset()
+			m.loading = true
+			m.status.SetLoading(true)
+			m.status.SetStatus("Thinking...")
+			m.input.Blur()
+			m.chat.StartAssistantMessage()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			setCurrentCancel(cancel)
+
+			return m, tea.Batch(m.sendToAgent(ctx, prompt), m.status.SpinnerTick())
+		}
 	}
 
 	// Parse input for file references (images AND text files)

@@ -9,6 +9,7 @@ import (
 	"jarvis/internal/auth"
 	"jarvis/internal/config"
 	"jarvis/internal/registry"
+	"jarvis/internal/skills"
 	"jarvis/internal/tui"
 	"jarvis/pkg/tools"
 
@@ -56,6 +57,8 @@ func main() {
 		return agent.NewAgent(client, reg, cfg)
 	}
 
+	skillLoader := skills.NewSkillLoader("skills")
+
 	var ag tui.AgentInterface
 	needsLogin := true
 	envPath := ".env"
@@ -98,7 +101,7 @@ func main() {
 		}
 	}
 
-	model := tui.New(ag, agentFactory, cfg, needsLogin)
+	model := tui.New(ag, agentFactory, cfg, needsLogin, skillLoader)
 
 	p := tea.NewProgram(
 		model,
