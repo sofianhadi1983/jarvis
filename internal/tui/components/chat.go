@@ -93,6 +93,15 @@ func (c *ChatView) SetSize(width, height int) {
 	c.ready = true
 }
 
+// UpdateHeight cheaply adjusts the viewport height without recreating the renderer.
+func (c *ChatView) UpdateHeight(height int) {
+	if height == c.height || height < 1 {
+		return
+	}
+	c.height = height
+	c.viewport.Height = height
+}
+
 func (c *ChatView) AddMessage(msg ChatMessage) {
 	c.messages = append(c.messages, msg)
 	if c.ready {

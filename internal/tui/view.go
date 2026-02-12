@@ -13,6 +13,16 @@ func (m Model) View() string {
 		return m.loginModal.View()
 	}
 
+	// Adjust chat height dynamically based on current input height
+	headerHeight := 5
+	inputHeight := m.input.Height() + 1
+	statusHeight := 1
+	chatHeight := m.height - headerHeight - inputHeight - statusHeight
+	if chatHeight < 5 {
+		chatHeight = 5
+	}
+	m.chat.UpdateHeight(chatHeight)
+
 	headerView := m.header.View()
 	chatView := m.chat.View()
 	imageIndicatorView := m.imageIndicator.View()

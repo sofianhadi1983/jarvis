@@ -1,6 +1,8 @@
 package components
 
 import (
+	"strings"
+
 	"jarvis/internal/styles"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -8,9 +10,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const maxInputLines = 10
+
 type InputArea struct {
 	textarea    textarea.Model
 	width       int
+	height      int // current textarea line count
 	placeholder string
 	focused     bool
 }
@@ -32,6 +37,7 @@ func NewInputArea(placeholder string) *InputArea {
 
 	return &InputArea{
 		textarea:    ta,
+		height:      1,
 		placeholder: placeholder,
 		focused:     true,
 	}
@@ -40,6 +46,7 @@ func NewInputArea(placeholder string) *InputArea {
 func (i *InputArea) SetWidth(width int) {
 	i.width = width
 	i.textarea.SetWidth(width - 4)
+	i.recalcHeight()
 }
 
 func (i *InputArea) Focus() tea.Cmd {
@@ -55,7 +62,49 @@ func (i *InputArea) Blur() {
 func (i *InputArea) Update(msg tea.Msg) (*InputArea, tea.Cmd) {
 	var cmd tea.Cmd
 	i.textarea, cmd = i.textarea.Update(msg)
+	i.recalcHeight()
 	return i, cmd
+}
+
+// Height returns the total rendered height of the input area (padding + textarea lines).
+func (i *InputArea) Height() int {
+	return i.height + 1 // +1 for PaddingTop
+}
+
+func (i *InputArea) visualLineCount() int {
+	value := i.textarea.Value()
+	if value == "" {
+		return 1
+	}
+	usableWidth := i.width - 4
+	if usableWidth <= 0 {
+		return 1
+	}
+	lines := strings.Split(value, "\n")
+	count := 0
+	for _, line := range lines {
+		runeLen := len([]rune(line))
+		if runeLen == 0 {
+			count++
+		} else {
+			count += (runeLen + usableWidth - 1) / usableWidth
+		}
+	}
+	if count < 1 {
+		count = 1
+	}
+	return count
+}
+
+func (i *InputArea) recalcHeight() {
+	lines := i.visualLineCount()
+	if lines > maxInputLines {
+		lines = maxInputLines
+	}
+	if lines != i.height {
+		i.height = lines
+		i.textarea.SetHeight(lines)
+	}
 }
 
 func (i *InputArea) View() string {
@@ -81,10 +130,12 @@ func (i *InputArea) Value() string {
 
 func (i *InputArea) Reset() {
 	i.textarea.Reset()
+	i.recalcHeight()
 }
 
 func (i *InputArea) SetValue(s string) {
 	i.textarea.SetValue(s)
+	i.recalcHeight()
 }
 
 func (i *InputArea) Focused() bool {

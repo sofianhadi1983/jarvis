@@ -319,7 +319,7 @@ func (m Model) handleWindowSize(msg tea.WindowSizeMsg) (tea.Model, tea.Cmd) {
 	m.loginModal.SetSize(m.width, m.height)
 
 	headerHeight := 5
-	inputHeight := 3
+	inputHeight := m.input.Height() + 1 // +1 for visual gap
 	statusHeight := 1
 	chatHeight := m.height - headerHeight - inputHeight - statusHeight
 
