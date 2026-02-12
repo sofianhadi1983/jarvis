@@ -22,6 +22,7 @@ const (
 	RoleAssistant
 	RoleTool
 	RoleSystem
+	RoleParallelGroup
 )
 
 type ChatMessage struct {
@@ -31,6 +32,22 @@ type ChatMessage struct {
 	ToolInput string
 	Timestamp time.Time
 	Diff      *types.DiffInfo
+
+	// Parallel group fields
+	ParallelTaskNames  []string
+	ParallelAgentTypes []string
+	ParallelToolCounts []int
+	ParallelStatuses   []string
+	ParallelDone       bool
+}
+
+// ParallelGroupState tracks the live state of a parallel group for TUI updates.
+type ParallelGroupState struct {
+	GroupID    string
+	TaskNames  []string
+	AgentTypes []string
+	ToolCounts []int
+	Statuses   []string
 }
 
 type ChatView struct {
@@ -184,6 +201,9 @@ func (c *ChatView) renderMessages() string {
 
 		case RoleTool:
 			sb.WriteString(c.renderToolMessage(msg))
+
+		case RoleParallelGroup:
+			sb.WriteString(c.renderParallelGroup(msg))
 
 		case RoleSystem:
 			sb.WriteString(bulletStyle.Render("* "))
@@ -416,6 +436,13 @@ func stripEmojis(text string) string {
 	return result
 }
 
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 func wrapText(text string, width int) string {
 	if width <= 0 {
 		width = 80
@@ -462,4 +489,111 @@ func (c *ChatView) ClearMessages() {
 	if c.ready {
 		c.viewport.SetContent(c.renderMessages())
 	}
+}
+
+// UpdateParallelGroup finds the last RoleParallelGroup message and updates it with live state.
+func (c *ChatView) UpdateParallelGroup(state *ParallelGroupState) {
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		if c.messages[i].Role == RoleParallelGroup {
+			c.messages[i].ParallelToolCounts = append([]int(nil), state.ToolCounts...)
+			c.messages[i].ParallelStatuses = append([]string(nil), state.Statuses...)
+			if c.ready {
+				c.viewport.SetContent(c.renderMessages())
+				c.viewport.GotoBottom()
+			}
+			return
+		}
+	}
+}
+
+// FinalizeParallelGroup marks the last RoleParallelGroup message as done.
+func (c *ChatView) FinalizeParallelGroup(state *ParallelGroupState) {
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		if c.messages[i].Role == RoleParallelGroup {
+			c.messages[i].ParallelToolCounts = append([]int(nil), state.ToolCounts...)
+			c.messages[i].ParallelStatuses = append([]string(nil), state.Statuses...)
+			c.messages[i].ParallelDone = true
+			if c.ready {
+				c.viewport.SetContent(c.renderMessages())
+				c.viewport.GotoBottom()
+			}
+			return
+		}
+	}
+}
+
+func (c *ChatView) renderParallelGroup(msg ChatMessage) string {
+	var sb strings.Builder
+
+	bulletStyle := lipgloss.NewStyle().Foreground(styles.ToolColor)
+	headerStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Bold(true)
+	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	countStyle := lipgloss.NewStyle().Foreground(styles.DimColor)
+	statusStyle := lipgloss.NewStyle().Foreground(styles.DimColor)
+	treeStyle := lipgloss.NewStyle().Foreground(styles.DimColor)
+
+	n := len(msg.ParallelTaskNames)
+
+	// Count unique agent types for header
+	typeCounts := map[string]int{}
+	for _, t := range msg.ParallelAgentTypes {
+		typeCounts[t]++
+	}
+
+	if msg.ParallelDone {
+		sb.WriteString(bulletStyle.Render("* "))
+		sb.WriteString(headerStyle.Render(fmt.Sprintf("Ran %d agents in parallel", n)))
+		sb.WriteString("\n")
+	} else {
+		// Build header like "Running 2 Explore agents..."
+		var parts []string
+		for agentType, count := range typeCounts {
+			label := capitalizeFirst(agentType)
+			if count > 1 {
+				parts = append(parts, fmt.Sprintf("%d %s agents", count, label))
+			} else {
+				parts = append(parts, fmt.Sprintf("%d %s agent", count, label))
+			}
+		}
+		sb.WriteString(bulletStyle.Render("* "))
+		sb.WriteString(headerStyle.Render("Running "+strings.Join(parts, ", ")+"..."))
+		sb.WriteString("\n")
+	}
+
+	for i := 0; i < n; i++ {
+		branch := "├─"
+		indent := "│  "
+		if i == n-1 {
+			branch = "└─"
+			indent = "   "
+		}
+
+		name := msg.ParallelTaskNames[i]
+		toolCount := 0
+		if i < len(msg.ParallelToolCounts) {
+			toolCount = msg.ParallelToolCounts[i]
+		}
+		status := ""
+		if i < len(msg.ParallelStatuses) {
+			status = msg.ParallelStatuses[i]
+		}
+
+		sb.WriteString("  ")
+		sb.WriteString(treeStyle.Render(branch + " "))
+		sb.WriteString(descStyle.Render(name))
+		if toolCount > 0 {
+			sb.WriteString(countStyle.Render(fmt.Sprintf(" · %d tool uses", toolCount)))
+		}
+		sb.WriteString("\n")
+
+		if status != "" && !msg.ParallelDone {
+			sb.WriteString("  ")
+			sb.WriteString(treeStyle.Render(indent))
+			sb.WriteString(statusStyle.Render("└  " + status))
+			sb.WriteString("\n")
+		}
+	}
+
+	sb.WriteString("\n")
+	return sb.String()
 }

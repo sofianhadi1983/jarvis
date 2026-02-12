@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/image"
@@ -164,11 +165,21 @@ func (a *Agent) processConversation(ctx context.Context, callback func(msg any))
 		toolResults := []anthropic.BetaContentBlockParamUnion{}
 		todoUsedThisRound := false
 
+		// Partition tool blocks into Task and non-Task
+		var nonTaskBlocks []toolBlock
+		var taskBlocks []toolBlock
 		for _, tb := range toolBlocks {
+			if tb.name == "Task" {
+				taskBlocks = append(taskBlocks, tb)
+			} else {
+				nonTaskBlocks = append(nonTaskBlocks, tb)
+			}
+		}
+
+		// Execute non-Task tools sequentially (unchanged behavior)
+		for _, tb := range nonTaskBlocks {
 			validInput := ensureValidJSON(tb.inputJSON)
-
 			assistantContent = append(assistantContent, anthropic.NewBetaToolUseBlock(tb.id, json.RawMessage(validInput), tb.name))
-
 			callback(types.ToolStartMsg{Name: tb.name})
 
 			result, isError := a.executeTool(tb.id, tb.name, json.RawMessage(validInput))
@@ -188,6 +199,78 @@ func (a *Agent) processConversation(ctx context.Context, callback func(msg any))
 				Input:  validInput,
 				Result: result,
 				Diff:   diffInfo,
+			})
+		}
+
+		// Execute Task tools — parallel if >= 2, sequential if 1
+		if len(taskBlocks) >= 2 {
+			// Build parallel inputs
+			parallelInputs := make([]subagent.ParallelTaskInput, 0, len(taskBlocks))
+			taskNames := make([]string, 0, len(taskBlocks))
+			agentTypes := make([]string, 0, len(taskBlocks))
+
+			for _, tb := range taskBlocks {
+				validInput := ensureValidJSON(tb.inputJSON)
+				assistantContent = append(assistantContent, anthropic.NewBetaToolUseBlock(tb.id, json.RawMessage(validInput), tb.name))
+
+				var params subagent.TaskInput
+				if err := json.Unmarshal([]byte(validInput), &params); err != nil {
+					toolResults = append(toolResults, a.newBetaToolResult(tb.id, "invalid Task input: "+err.Error(), true))
+					callback(types.ToolCallMsg{Name: tb.name, Input: validInput, Result: "invalid Task input: " + err.Error()})
+					continue
+				}
+
+				parallelInputs = append(parallelInputs, subagent.ParallelTaskInput{
+					ToolUseID: tb.id,
+					Input:     params,
+					RawInput:  json.RawMessage(validInput),
+				})
+				taskNames = append(taskNames, params.Description)
+				agentTypes = append(agentTypes, params.AgentType)
+			}
+
+			if len(parallelInputs) > 0 {
+				groupID := fmt.Sprintf("pg-%d", time.Now().UnixNano())
+
+				callback(types.ParallelGroupStartMsg{
+					GroupID:    groupID,
+					TaskNames:  taskNames,
+					AgentTypes: agentTypes,
+				})
+
+				results := subagent.RunTasksParallel(
+					ctx, a.registry, parallelInputs, callback,
+					func(reg *registry.Registry, sysPrompt string) subagent.MessageSender {
+						return NewChildAgent(a.client, reg, sysPrompt)
+					},
+					groupID,
+				)
+
+				callback(types.ParallelGroupDoneMsg{GroupID: groupID})
+
+				for _, r := range results {
+					toolResults = append(toolResults, a.newBetaToolResult(r.ToolUseID, r.Result, r.IsError))
+					callback(types.ToolCallMsg{
+						Name:   "Task",
+						Input:  "",
+						Result: r.Result,
+					})
+				}
+			}
+		} else if len(taskBlocks) == 1 {
+			// Single Task — execute sequentially (unchanged)
+			tb := taskBlocks[0]
+			validInput := ensureValidJSON(tb.inputJSON)
+			assistantContent = append(assistantContent, anthropic.NewBetaToolUseBlock(tb.id, json.RawMessage(validInput), tb.name))
+			callback(types.ToolStartMsg{Name: tb.name})
+
+			result, isError := a.executeTool(tb.id, tb.name, json.RawMessage(validInput))
+			toolResults = append(toolResults, a.newBetaToolResult(tb.id, result, isError))
+
+			callback(types.ToolCallMsg{
+				Name:   tb.name,
+				Input:  validInput,
+				Result: result,
 			})
 		}
 

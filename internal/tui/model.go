@@ -74,6 +74,8 @@ type Model struct {
 	agentFactory AgentFactory
 	config       *config.Config
 
+	parallelGroup *components.ParallelGroupState
+
 	width        int
 	height       int
 	ready        bool

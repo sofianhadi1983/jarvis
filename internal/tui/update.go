@@ -59,6 +59,51 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case ParallelGroupStartMsg:
+		m.parallelGroup = &components.ParallelGroupState{
+			GroupID:    msg.GroupID,
+			TaskNames:  msg.TaskNames,
+			AgentTypes: msg.AgentTypes,
+			ToolCounts: make([]int, len(msg.TaskNames)),
+			Statuses:   make([]string, len(msg.TaskNames)),
+		}
+		m.chat.AddMessage(components.ChatMessage{
+			Role:               components.RoleParallelGroup,
+			Timestamp:          time.Now(),
+			ParallelTaskNames:  msg.TaskNames,
+			ParallelAgentTypes: msg.AgentTypes,
+			ParallelToolCounts: make([]int, len(msg.TaskNames)),
+			ParallelStatuses:   make([]string, len(msg.TaskNames)),
+		})
+		m.status.SetStatus(fmt.Sprintf("Running %d agents in parallel...", len(msg.TaskNames)))
+		if m.loading {
+			return m, m.status.SpinnerTick()
+		}
+		return m, nil
+
+	case ParallelAgentUpdateMsg:
+		if m.parallelGroup != nil && msg.GroupID == m.parallelGroup.GroupID {
+			if msg.AgentIndex >= 0 && msg.AgentIndex < len(m.parallelGroup.ToolCounts) {
+				m.parallelGroup.ToolCounts[msg.AgentIndex] = msg.ToolCount
+				m.parallelGroup.Statuses[msg.AgentIndex] = msg.Status
+				m.chat.UpdateParallelGroup(m.parallelGroup)
+			}
+		}
+		if m.loading {
+			return m, m.status.SpinnerTick()
+		}
+		return m, nil
+
+	case ParallelGroupDoneMsg:
+		if m.parallelGroup != nil && msg.GroupID == m.parallelGroup.GroupID {
+			m.chat.FinalizeParallelGroup(m.parallelGroup)
+			m.parallelGroup = nil
+		}
+		if m.loading {
+			return m, m.status.SpinnerTick()
+		}
+		return m, nil
+
 	case ToolStartMsg:
 		m.status.SetStatus("Running " + msg.Name + "...")
 		if m.loading {

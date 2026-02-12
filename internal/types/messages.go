@@ -59,3 +59,23 @@ type AgentReadyMsg struct{}
 type TodoUpdateMsg struct {
 	ActiveForm string
 }
+
+// ParallelGroupStartMsg is sent once when a parallel group of subagents starts.
+type ParallelGroupStartMsg struct {
+	GroupID    string
+	TaskNames  []string // description per agent
+	AgentTypes []string // "explore"/"code"/"plan" per agent
+}
+
+// ParallelAgentUpdateMsg is sent by each subagent as it uses tools.
+type ParallelAgentUpdateMsg struct {
+	GroupID    string
+	AgentIndex int
+	ToolCount  int
+	Status     string
+}
+
+// ParallelGroupDoneMsg is sent when all parallel agents finish.
+type ParallelGroupDoneMsg struct {
+	GroupID string
+}

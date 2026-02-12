@@ -10,3 +10,6 @@ type ToolEndMsg = types.ToolEndMsg
 type ErrorMsg = types.ErrorMsg
 type AgentReadyMsg = types.AgentReadyMsg
 type TodoUpdateMsg = types.TodoUpdateMsg
+type ParallelGroupStartMsg = types.ParallelGroupStartMsg
+type ParallelAgentUpdateMsg = types.ParallelAgentUpdateMsg
+type ParallelGroupDoneMsg = types.ParallelGroupDoneMsg
