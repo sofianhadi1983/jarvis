@@ -15,6 +15,12 @@ type PromptConfig struct {
 	File      string            `yaml:"file,omitempty"`
 }
 
+type MCPServerConfig struct {
+	Command string            `yaml:"command"`
+	Args    []string          `yaml:"args"`
+	Env     map[string]string `yaml:"env,omitempty"`
+}
+
 type Config struct {
 	Anthropic struct {
 		Model     string `yaml:"model"`
@@ -30,6 +36,10 @@ type Config struct {
 	UI struct {
 		Theme string `yaml:"theme"`
 	} `yaml:"ui"`
+
+	MCP struct {
+		Servers map[string]MCPServerConfig `yaml:"servers"`
+	} `yaml:"mcp"`
 }
 
 func LoadConfig() (*Config, error) {

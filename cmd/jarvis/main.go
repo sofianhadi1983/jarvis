@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 
 	"jarvis/internal/agent"
 	"jarvis/internal/auth"
 	"jarvis/internal/config"
+	mcpclient "jarvis/internal/mcp"
 	"jarvis/internal/registry"
 	"jarvis/internal/skills"
 	"jarvis/internal/tui"
@@ -45,6 +48,20 @@ func main() {
 
 	reg := registry.NewRegistry()
 	registerTools(reg)
+
+	// Initialize MCP servers if configured
+	if len(cfg.MCP.Servers) > 0 {
+		mcpManager := mcpclient.NewManager(cfg.MCP.Servers)
+		ctx := context.Background()
+		if err := mcpManager.Connect(ctx); err != nil {
+			log.Printf("Warning: MCP connection error: %v", err)
+		}
+		defer mcpManager.Close()
+
+		for _, tool := range mcpManager.GetTools(ctx) {
+			reg.RegisterOrReplace(tool)
+		}
+	}
 
 	agentFactory := func(apiKey string) (tui.AgentInterface, error) {
 		var client anthropic.Client
